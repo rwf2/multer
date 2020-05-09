@@ -1,15 +1,14 @@
 use crate::state::{MultipartState, StreamingStage};
-use crate::{constants, ErrorExt, ResultExt};
+use crate::{constants, ErrorExt};
 use bytes::{Bytes, BytesMut};
 use encoding_rs::{Encoding, UTF_8};
-use futures::stream::{Stream, StreamExt, TryStreamExt};
-use http::header::{self, HeaderMap, HeaderName, HeaderValue};
+use futures::stream::{Stream, TryStreamExt};
+use http::header::{self, HeaderMap};
 #[cfg(feature = "json")]
 use serde::de::DeserializeOwned;
 #[cfg(feature = "json")]
 use serde_json;
 use std::borrow::Cow;
-use std::future::Future;
 use std::ops::DerefMut;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -26,10 +25,11 @@ struct FieldMeta {
     name: Option<String>,
     file_name: Option<String>,
     content_type: Option<mime::Mime>,
+    idx: usize,
 }
 
 impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'static> Field<S> {
-    pub(crate) fn new(state: Arc<Mutex<MultipartState<S>>>, headers: HeaderMap) -> Self {
+    pub(crate) fn new(state: Arc<Mutex<MultipartState<S>>>, headers: HeaderMap, idx: usize) -> Self {
         let (name, file_name) = Self::parse_content_disposition(&headers);
         let content_type = Self::parse_content_type(&headers);
 
@@ -41,6 +41,7 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
                 name,
                 file_name,
                 content_type,
+                idx,
             },
         }
     }
@@ -82,14 +83,6 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
         self.meta.content_type.as_ref()
     }
 
-    // @todo: Add methods inspired from https://docs.rs/reqwest/0.10.4/reqwest/struct.Response.html#method.text.
-    // use 'mime' crate for header parsing
-    // and more:
-    // file_name,
-    // field_name,
-    // content_type [use mime crate to parse charset]
-    //
-
     pub fn headers(&self) -> &HeaderMap {
         &self.headers
     }
@@ -97,8 +90,7 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
     pub async fn bytes(mut self) -> crate::Result<Bytes> {
         let mut buf = BytesMut::new();
 
-        while let Some(bytes) = self.next().await {
-            let bytes = bytes?;
+        while let Some(bytes) = self.chunk().await? {
             buf.extend_from_slice(&bytes);
         }
 
@@ -115,6 +107,10 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
             .await
             .context("Couldn't read field data as `Bytes`")
             .and_then(|bytes| serde_json::from_slice(&bytes).context("Couldn't parse field data as JSON"))
+    }
+
+    pub async fn text(self) -> crate::Result<String> {
+        self.text_with_charset("utf-8").await
     }
 
     pub async fn text_with_charset(self, default_encoding: &str) -> crate::Result<String> {
@@ -136,11 +132,8 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
         }
     }
 
-    /// @todo: Improve it from async_multipart crate, add a limit on payload size to block DDOS attack.
-    /// read as text whatever data it has, the user need to use is_text_field() method to check it it's a text field.
-    /// same for json.
-    pub async fn text() -> crate::Result<String> {
-        todo!()
+    pub fn index(&self) -> usize {
+        self.meta.idx
     }
 }
 
@@ -199,8 +192,13 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
 
         let state: &mut MultipartState<S> = mutex_guard.deref_mut();
 
+        if self.done {
+            state.stage = StreamingStage::ReadingBoundary;
+        } else {
+            state.stage = StreamingStage::CleaningPrevFieldData;
+        }
+
         state.is_prev_field_consumed = true;
-        state.stage = StreamingStage::CleaningPrevFieldData;
 
         if let Some(waker) = state.next_field_waker.take() {
             waker.clone().wake();
