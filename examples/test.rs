@@ -18,12 +18,10 @@ async fn handle(req: Request<Body>) -> Result<Response<Body>, Infallible> {
 
     let mut m = Multipart::new(stream, "X-INSOMNIA-BOUNDARY");
 
-    let mut i = 0;
+    // let mut i = 0;
     while let Some(field) = m.next().await {
         let mut field = field.expect("No field");
         println!("{:?}", field.headers());
-
-        println!("")
 
         // let mut file = OpenOptions::new()
         //     .create(true)
@@ -39,14 +37,13 @@ async fn handle(req: Request<Body>) -> Result<Response<Body>, Infallible> {
         //
         // file.flush().await.unwrap();
         //
-        // // let mut len = 0;
-        // // while let Some(chunk) = field.next().await {
-        // //     let chunk = chunk.expect("No chunk");
-        // //     len += chunk.len();
-        // //     // println!("Chunk Size: {}", chunk.len());
-        // // }
-        // // println!("Total field data size: {}", len);
-        // i += 1;
+        // let mut len = 0;
+        while let Some(chunk) = field.next().await {
+            let chunk = chunk.expect("No chunk");
+            // len += chunk.len();
+            // println!("Chunk Size: {}", chunk.len());
+        }
+        // println!("Total field data size: {}", len);
     }
 
     Ok(Response::new("Hello, World!".into()))

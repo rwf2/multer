@@ -163,7 +163,10 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
 
         let mut mutex_guard = match Pin::new(&mut self.state.lock()).poll(cx) {
             Poll::Ready(guard) => guard,
-            Poll::Pending => return Poll::Pending,
+            Poll::Pending => {
+                println!("Field: Pending on state lock");
+                return Poll::Pending;
+            }
         };
 
         let state: &mut MultipartState<S> = mutex_guard.deref_mut();
