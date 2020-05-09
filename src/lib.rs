@@ -2,14 +2,6 @@
 //!
 //! # Examples
 //!
-//! ```
-//! use multer_rs;
-//!
-//! # fn run() {
-//! println!("{}", multer_rs::add(2, 3));
-//! # }
-//! # run();
-//! ```
 
 pub use error::Error;
 #[doc(hidden)]
@@ -35,7 +27,7 @@ pub fn parse_boundary<T: AsRef<str>>(content_type: T) -> crate::Result<String> {
         .parse::<mime::Mime>()
         .context("Failed to parse the content type as mime type")?;
 
-    if !(m.type_() == mime::MULTIPART_FORM_DATA.type_() && m.subtype() == mime::MULTIPART_FORM_DATA.subtype()) {
+    if !(m.type_() == mime::MULTIPART && m.subtype() == mime::FORM_DATA) {
         return Err(crate::Error::new("Content-type is not multipart/form-data"));
     }
 

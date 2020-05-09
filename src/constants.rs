@@ -4,6 +4,7 @@ use regex::Regex;
 pub(crate) const MAX_HEADERS: usize = 32;
 pub(crate) const BOUNDARY_EXT: &'static str = "--";
 pub(crate) const CR: &'static str = "\r";
+#[allow(dead_code)]
 pub(crate) const LF: &'static str = "\n";
 pub(crate) const CRLF: &'static str = "\r\n";
 pub(crate) const CRLF_CRLF: &'static str = "\r\n\r\n";

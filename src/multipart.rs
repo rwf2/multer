@@ -1,20 +1,13 @@
 use crate::buffer::StreamBuffer;
+use crate::constants;
 use crate::helpers;
 use crate::state::{MultipartState, StreamingStage};
-use crate::{constants, ResultExt};
 use crate::{ErrorExt, Field};
 use bytes::Bytes;
-use futures::{
-    lock::Mutex,
-    stream::{Stream, TryStreamExt},
-    StreamExt,
-};
-use http::header::{HeaderMap, HeaderName, HeaderValue};
-use std::convert::TryInto;
-use std::future::Future;
+use futures::stream::{Stream, TryStreamExt};
 use std::ops::DerefMut;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
 /// The previous field must be consumed, (dropping a field will not work) to get the next field.
@@ -30,6 +23,7 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
             stage: StreamingStage::ReadingBoundary,
             is_prev_field_consumed: true,
             next_field_waker: None,
+            next_field_idx: 0,
         };
 
         Multipart {
@@ -40,17 +34,22 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
     pub async fn next_field(&mut self) -> crate::Result<Option<Field<S>>> {
         self.try_next().await
     }
+
+    pub async fn next_field_with_idx(&mut self) -> crate::Result<Option<(usize, Field<S>)>> {
+        self.try_next().await.map(|f| f.map(|field| (field.index(), field)))
+    }
 }
 
 impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'static> Stream for Multipart<S> {
     type Item = Result<Field<S>, crate::Error>;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        let mut mutex_guard = match Pin::new(&mut self.state.lock()).poll(cx) {
-            Poll::Ready(guard) => guard,
-            Poll::Pending => {
-                println!("Multipart: Pending on state lock");
-                return Poll::Pending;
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        let mut mutex_guard = match self.state.lock() {
+            Ok(lock) => lock,
+            Err(err) => {
+                return Poll::Ready(Some(Err(
+                    crate::Error::new(err.to_string()).context("Couldn't lock the multipart state")
+                )));
             }
         };
 
@@ -69,6 +68,23 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
 
         if let Err(err) = stream_buffer.poll_stream(cx) {
             return Poll::Ready(Some(Err(err.context("Couldn't read data from the stream"))));
+        }
+
+        if state.stage == StreamingStage::CleaningPrevFieldData {
+            match stream_buffer.read_field_data(state.boundary.as_str()) {
+                Ok(Some((true, _))) => {
+                    state.stage = StreamingStage::ReadingBoundary;
+                }
+                Ok(Some((false, _))) => {
+                    return Poll::Pending;
+                }
+                Ok(None) => {
+                    return Poll::Pending;
+                }
+                Err(err) => {
+                    return Poll::Ready(Some(Err(err)));
+                }
+            }
         }
 
         if state.stage == StreamingStage::ReadingBoundary {
@@ -142,9 +158,12 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
             state.stage = StreamingStage::ReadingFieldData;
             state.is_prev_field_consumed = false;
 
+            let field_idx = state.next_field_idx;
+            state.next_field_idx += 1;
+
             drop(mutex_guard);
 
-            let next_field = Field::new(Arc::clone(&self.state), headers);
+            let next_field = Field::new(Arc::clone(&self.state), headers, field_idx);
             return Poll::Ready(Some(Ok(next_field)));
         }
 

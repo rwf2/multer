@@ -16,6 +16,7 @@ default = []
 json = ["serde", "serde_json"]
 
 [dependencies]
+log = "0.4"
 bytes = "0.5"
 futures = "0.3"
 twoway = "0.2"
