@@ -71,7 +71,7 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
                 // discard \r\n.
                 drop(self.buf.split_to(2).freeze());
 
-                println!("boundary found");
+                // println!("boundary found");
 
                 Ok(Some((true, bytes)))
             }
@@ -90,11 +90,11 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
                     Some(rel_idx) => {
                         let idx = rel_idx + rem_boundary_part_idx;
 
-                        println!("CR found at the end: {}", rel_idx);
+                        // println!("CR found at the end: {}", rel_idx);
 
                         match twoway::find_bytes(boundary_deriv.as_bytes(), &self.buf[idx..]) {
                             Some(_) => {
-                                println!("End CR matched with boundary part");
+                                // println!("End CR matched with boundary part");
                                 let bytes = self.buf.split_to(idx).freeze();
 
                                 if self.eof {
@@ -108,7 +108,7 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
                                 }
                             }
                             None => {
-                                println!("End CR didn't match with boundary part");
+                                // println!("End CR didn't match with boundary part");
                                 if self.eof {
                                     Err(crate::Error::new("Incomplete field data"))
                                 } else {
@@ -118,7 +118,7 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
                         }
                     }
                     None => {
-                        println!("CR not found at the end");
+                        // println!("CR not found at the end");
                         if self.eof {
                             Err(crate::Error::new("Incomplete field data"))
                         } else {

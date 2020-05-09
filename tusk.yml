@@ -10,7 +10,7 @@ tasks:
       - command: cargo install releez
   dev:
     run:
-      - command: cargo watch --watch ./src --watch ./examples/test.rs -x 'run --example test'
+      - command: cargo watch --watch ./src --watch ./examples/test.rs -x 'run --example test --features="json"'
   check:dev:
     run:
       - command: cargo watch --watch ./src -x 'check'
