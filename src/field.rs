@@ -1,6 +1,5 @@
 use crate::state::{MultipartState, StreamingStage};
-use crate::ErrorExt;
-use crate::{constants, ResultExt};
+use crate::{constants, ErrorExt, ResultExt};
 use bytes::{Bytes, BytesMut};
 use encoding_rs::{Encoding, UTF_8};
 use futures::stream::{Stream, StreamExt, TryStreamExt};
@@ -16,7 +15,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
-pub struct Field<S> {
+pub struct Field<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'static> {
     state: Arc<Mutex<MultipartState<S>>>,
     headers: HeaderMap,
     done: bool,
@@ -143,11 +142,6 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
     pub async fn text() -> crate::Result<String> {
         todo!()
     }
-
-    /// Consumes and skips the current field data, so that the next field will be available.
-    pub async fn consume(self) {
-        todo!()
-    }
 }
 
 impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'static> Stream for Field<S> {
@@ -161,13 +155,10 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
         let mut mutex_guard = match self.state.lock() {
             Ok(lock) => lock,
             Err(err) => {
-                return Poll::Ready(Some(Err(err.context("Couldn't lock the multipart state"))));
+                return Poll::Ready(Some(Err(
+                    crate::Error::new(err.to_string()).context("Couldn't lock the multipart state")
+                )));
             }
-        };
-
-        let mut mutex_guard = match Pin::new(&mut self.state.lock()).poll(cx) {
-            Poll::Ready(guard) => guard,
-            Poll::Pending => return Poll::Pending,
         };
 
         let state: &mut MultipartState<S> = mutex_guard.deref_mut();
@@ -180,14 +171,8 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
 
         match stream_buffer.read_field_data(state.boundary.as_str()) {
             Ok(Some((true, bytes))) => {
-                state.is_prev_field_consumed = true;
-                state.stage = StreamingStage::ReadingBoundary;
-
-                if let Some(waker) = state.next_field_waker.take() {
-                    waker.clone().wake();
-                }
-
                 drop(mutex_guard);
+
                 self.done = true;
 
                 Poll::Ready(Some(Ok(bytes)))
@@ -195,6 +180,30 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
             Ok(Some((false, bytes))) => Poll::Ready(Some(Ok(bytes))),
             Ok(None) => Poll::Pending,
             Err(err) => Poll::Ready(Some(Err(err))),
+        }
+    }
+}
+
+impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'static> Drop for Field<S> {
+    fn drop(&mut self) {
+        let mut mutex_guard = match self.state.lock() {
+            Ok(lock) => lock,
+            Err(err) => {
+                log::error!(
+                    "{}",
+                    crate::Error::new(err.to_string()).context("Couldn't lock the multipart state")
+                );
+                return;
+            }
+        };
+
+        let state: &mut MultipartState<S> = mutex_guard.deref_mut();
+
+        state.is_prev_field_consumed = true;
+        state.stage = StreamingStage::CleaningPrevFieldData;
+
+        if let Some(waker) = state.next_field_waker.take() {
+            waker.clone().wake();
         }
     }
 }

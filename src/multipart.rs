@@ -5,7 +5,6 @@ use crate::{constants, ResultExt};
 use crate::{ErrorExt, Field};
 use bytes::Bytes;
 use futures::{
-    lock::Mutex,
     stream::{Stream, TryStreamExt},
     StreamExt,
 };
@@ -14,7 +13,7 @@ use std::convert::TryInto;
 use std::future::Future;
 use std::ops::DerefMut;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
 /// The previous field must be consumed, (dropping a field will not work) to get the next field.
@@ -27,7 +26,7 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
         let state = MultipartState {
             buffer: StreamBuffer::new(stream),
             boundary: boundary.into(),
-            stage: StreamingStage::ReadingBoundary,
+            stage: StreamingStage::CleaningPrevFieldData,
             is_prev_field_consumed: true,
             next_field_waker: None,
         };
@@ -46,9 +45,13 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
     type Item = Result<Field<S>, crate::Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        let mut mutex_guard = match Pin::new(&mut self.state.lock()).poll(cx) {
-            Poll::Ready(guard) => guard,
-            Poll::Pending => return Poll::Pending,
+        let mut mutex_guard = match self.state.lock() {
+            Ok(lock) => lock,
+            Err(err) => {
+                return Poll::Ready(Some(Err(
+                    crate::Error::new(err.to_string()).context("Couldn't lock the multipart state")
+                )));
+            }
         };
 
         let state: &mut MultipartState<S> = mutex_guard.deref_mut();
@@ -66,6 +69,23 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
 
         if let Err(err) = stream_buffer.poll_stream(cx) {
             return Poll::Ready(Some(Err(err.context("Couldn't read data from the stream"))));
+        }
+
+        if state.stage == StreamingStage::CleaningPrevFieldData {
+            match stream_buffer.read_field_data(state.boundary.as_str()) {
+                Ok(Some((true, bytes))) => {
+                    state.stage = StreamingStage::ReadingBoundary;
+                }
+                Ok(Some((false, _))) => {
+                    return Poll::Pending;
+                }
+                Ok(None) => {
+                    return Poll::Pending;
+                }
+                Err(err) => {
+                    return Poll::Ready(Some(Err(err)));
+                }
+            }
         }
 
         if state.stage == StreamingStage::ReadingBoundary {
