@@ -3,10 +3,7 @@ use crate::ErrorExt;
 use crate::{constants, ResultExt};
 use bytes::{Bytes, BytesMut};
 use encoding_rs::{Encoding, UTF_8};
-use futures::{
-    lock::Mutex,
-    stream::{Stream, StreamExt, TryStreamExt},
-};
+use futures::stream::{Stream, StreamExt, TryStreamExt};
 use http::header::{self, HeaderMap, HeaderName, HeaderValue};
 #[cfg(feature = "json")]
 use serde::de::DeserializeOwned;
@@ -16,7 +13,7 @@ use std::borrow::Cow;
 use std::future::Future;
 use std::ops::DerefMut;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
 pub struct Field<S> {
@@ -160,6 +157,13 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
         if self.done {
             return Poll::Ready(None);
         }
+
+        let mut mutex_guard = match self.state.lock() {
+            Ok(lock) => lock,
+            Err(err) => {
+                return Poll::Ready(Some(Err(err.context("Couldn't lock the multipart state"))));
+            }
+        };
 
         let mut mutex_guard = match Pin::new(&mut self.state.lock()).poll(cx) {
             Poll::Ready(guard) => guard,
