@@ -63,7 +63,7 @@ async fn get_byte_stream_from_somewhere() -> (impl Stream<Item = Result<Bytes, I
     
     (stream, "X-BOUNDARY")
 }
-```
+``` 
 
 ## Usage with [hyper.rs](https://hyper.rs/) server
 
