@@ -4,18 +4,21 @@ use futures::stream::Stream;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-pub(crate) struct StreamBuffer<S> {
+pub(crate) struct StreamBuffer {
     pub(crate) eof: bool,
     pub(crate) buf: BytesMut,
-    pub(crate) stream: S,
+    pub(crate) stream: Pin<Box<dyn Stream<Item = Result<Bytes, crate::Error>> + Send + Sync>>,
 }
 
-impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'static> StreamBuffer<S> {
-    pub fn new(stream: S) -> Self {
+impl StreamBuffer {
+    pub fn new<S>(stream: S) -> Self
+    where
+        S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + 'static,
+    {
         StreamBuffer {
             eof: false,
             buf: BytesMut::new(),
-            stream,
+            stream: Box::pin(stream),
         }
     }
 
@@ -25,7 +28,7 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
         }
 
         loop {
-            match Pin::new(&mut self.stream).poll_next(cx) {
+            match self.stream.as_mut().poll_next(cx) {
                 Poll::Ready(Some(Ok(data))) => self.buf.extend_from_slice(&data),
                 Poll::Ready(Some(Err(err))) => return Err(err),
                 Poll::Ready(None) => {

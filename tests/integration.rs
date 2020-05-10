@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use futures::stream;
-use multer::{Field, Multipart};
+use multer::Multipart;
 
 #[tokio::test]
 async fn test_multipart_basic() {

@@ -1,8 +1,8 @@
 use crate::buffer::StreamBuffer;
 use std::task::Waker;
 
-pub(crate) struct MultipartState<S> {
-    pub(crate) buffer: StreamBuffer<S>,
+pub(crate) struct MultipartState {
+    pub(crate) buffer: StreamBuffer,
     pub(crate) boundary: String,
     pub(crate) stage: StreamingStage,
     pub(crate) is_prev_field_consumed: bool,

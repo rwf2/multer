@@ -1,4 +1,6 @@
+use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
+use futures::TryStreamExt;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server};
 use multer::{Error, Field, Multipart};
@@ -8,10 +10,28 @@ use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 async fn handle(req: Request<Body>) -> Result<Response<Body>, Infallible> {
-    let mut stream = req.into_body().map(|item| item.wrap());
+    let mut stream = req.into_body();
+    // let mut stream = futures::stream::once(async move { Result::<&'static str, Infallible>::Ok("abc") });
+    // let stream = futures::stream::iter(vec![
+    //     Ok("abc"),
+    //     Err(std::io::Error::new(std::io::ErrorKind::Other, "Heyyyyyyyyyy")),
+    // ]);
 
-    while let Some(Ok(data)) = stream.next().await {
-        print!("{:?}", String::from_utf8_lossy(&*data).to_string())
+    // while let Some(Ok(data)) = stream.next().await {
+    //     print!("{:?}", String::from_utf8_lossy(&*data).to_string())
+    // }
+
+    // let reader =
+    //     tokio::io::stream_reader(stream.map_err(|err| tokio::io::Error::new(tokio::io::ErrorKind::Other, err)));
+    //
+    // let mut multipart = Multipart::with_reader(reader, "X-INSOMNIA-BOUNDARY");
+
+    let mut multipart = Multipart::new(stream, "X-INSOMNIA-BOUNDARY");
+
+    while let Some(field) = multipart.next_field().await.unwrap() {
+        println!("{:?}", field.name());
+        // let text = field.text().await.unwrap();
+        // println!("{}", text);
     }
 
     // let mut m = Multipart::new(stream, "X-INSOMNIA-BOUNDARY");

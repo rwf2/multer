@@ -8,11 +8,11 @@ checklist:
   - name: Check syntax
     type: auto
     run:
-      - cargo check --release
+      - cargo check --release --features="all"
   - name: Run tests
     type: auto
     run:
-      - cargo test --release
+      - cargo test --release --features="all"
   - name: Start a new release branch
     type: auto
     run:
