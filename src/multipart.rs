@@ -52,7 +52,7 @@ impl Multipart {
     /// Construct a new `Multipart` instance with the given [`Bytes`](https://docs.rs/bytes/0.5.4/bytes/struct.Bytes.html) stream and the boundary.
     pub fn new<S, O, E, B>(stream: S, boundary: B) -> Multipart
     where
-        S: Stream<Item = Result<O, E>> + Send + Sync + 'static,
+        S: Stream<Item = Result<O, E>> + Send + 'static,
         O: Into<Bytes> + 'static,
         E: Into<Box<dyn std::error::Error + Send + Sync>> + 'static,
         B: Into<String>,
@@ -105,7 +105,7 @@ impl Multipart {
     #[cfg(feature = "reader")]
     pub fn with_reader<R, B>(reader: R, boundary: B) -> Multipart
     where
-        R: AsyncRead + Send + Sync + 'static,
+        R: AsyncRead + Send + 'static,
         B: Into<String>,
     {
         let stream = FramedRead::new(reader, BytesCodec::new());

@@ -7,13 +7,13 @@ use std::task::{Context, Poll};
 pub(crate) struct StreamBuffer {
     pub(crate) eof: bool,
     pub(crate) buf: BytesMut,
-    pub(crate) stream: Pin<Box<dyn Stream<Item = Result<Bytes, crate::Error>> + Send + Sync>>,
+    pub(crate) stream: Pin<Box<dyn Stream<Item = Result<Bytes, crate::Error>> + Send>>,
 }
 
 impl StreamBuffer {
     pub fn new<S>(stream: S) -> Self
     where
-        S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + 'static,
+        S: Stream<Item = Result<Bytes, crate::Error>> + Send + 'static,
     {
         StreamBuffer {
             eof: false,

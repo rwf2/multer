@@ -1,6 +1,6 @@
 [package]
 name = "multer"
-version = "1.0.1"
+version = "1.0.2"
 description = "An async parser for `multipart/form-data` content-type in Rust."
 homepage = "https://github.com/rousan/multer-rs"
 repository = "https://github.com/rousan/multer-rs"
@@ -44,6 +44,7 @@ tokio-util = { version = "0.3.1", features = ["codec"],  optional = true}
 serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "0.2", features = ["full"] }
 hyper = "0.13"
+routerify = "1.1"
 
 [[example]]
 name = "test"
