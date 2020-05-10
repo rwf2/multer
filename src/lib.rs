@@ -22,7 +22,7 @@
 //!     let mut multipart = Multipart::new(stream, boundary);
 //!
 //!     // Iterate over the fields, use `next_field()` to get the next field.
-//!     while let Some(field) = multipart.next_field().await? {
+//!     while let Some(mut field) = multipart.next_field().await? {
 //!         // Get field name.
 //!         let name = field.name();
 //!         // Get the field's filename if provided in "Content-Disposition" header.
@@ -31,7 +31,7 @@
 //!         println!("Name: {:?}, File Name: {:?}", name, file_name);
 //!
 //!         // Process the field data chunks e.g. store them in a file.
-//!         while let Some(field_chunk) = field.chunk().await? {
+//!         while let Some(chunk) = field.chunk().await? {
 //!             // Do something with field chunk.
 //!             println!("Chunk: {:?}", chunk);
 //!         }

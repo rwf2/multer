@@ -11,7 +11,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut multipart = Multipart::with_reader(reader, boundary);
 
     // Iterate over the fields, use `next_field()` to get the next field.
-    while let Some(field) = multipart.next_field().await? {
+    while let Some(mut field) = multipart.next_field().await? {
         // Get field name.
         let name = field.name();
         // Get the field's filename if provided in "Content-Disposition" header.
