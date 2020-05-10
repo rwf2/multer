@@ -1,7 +1,7 @@
 [package]
 name = "multer"
-version = "1.0.0"
-description = "A multipart/form-data parser and writer for tokio.rs in Rust."
+version = "1.0.1"
+description = "An async parser for `multipart/form-data` content-type in Rust."
 homepage = "https://github.com/rousan/multer-rs"
 repository = "https://github.com/rousan/multer-rs"
 keywords = ["multipart-formdata", "multipart-uploads", "async", "formdata"]
