@@ -19,9 +19,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         println!("Name: {:?}, File Name: {:?}", name, file_name);
 
-        // Read field content as text.
-        let content = field.text().await?;
-        println!("Content: {:?}", content);
+        // Process the field data chunks e.g. store them in a file.
+        let mut field_bytes_len = 0;
+        while let Some(field_chunk) = field.chunk().await? {
+            // Do something with field chunk.
+            field_bytes_len += field_chunk.len();
+        }
+
+        println!("Field Bytes Length: {:?}", field_bytes_len);
     }
 
     Ok(())
