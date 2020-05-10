@@ -1,35 +1,73 @@
 use crate::buffer::StreamBuffer;
+use crate::constants;
 use crate::helpers;
 use crate::state::{MultipartState, StreamingStage};
-use crate::{constants, ResultExt};
 use crate::{ErrorExt, Field};
 use bytes::Bytes;
-use futures::{
-    lock::Mutex,
-    stream::{Stream, TryStreamExt},
-    StreamExt,
-};
-use http::header::{HeaderMap, HeaderName, HeaderValue};
-use std::convert::TryInto;
-use std::future::Future;
+use futures::stream::{Stream, TryStreamExt};
 use std::ops::DerefMut;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
+#[cfg(feature = "reader")]
+use tokio::io::AsyncRead;
+#[cfg(feature = "reader")]
+use tokio_util::codec::{BytesCodec, FramedRead};
 
-/// The previous field must be consumed, (dropping a field will not work) to get the next field.
-pub struct Multipart<S> {
-    state: Arc<Mutex<MultipartState<S>>>,
+/// Represents the implementation of `multipart/form-data` formatted data.
+///
+/// This will parse the source stream into [`Field`](./struct.Field.html) instances via its [`Stream`](https://docs.rs/futures/0.3.5/futures/stream/trait.Stream.html)
+/// implementation.
+///
+/// To maintain consistency in the underlying stream, this will not yield more than one [`Field`](./struct.Field.html) at a time.
+/// A [`Drop`](https://doc.rust-lang.org/nightly/std/ops/trait.Drop.html) implementation on [`Field`](./struct.Field.html) is used to signal
+/// when it's time to move forward, so do avoid leaking that type or anything which contains it.
+///
+/// The Fields can be accessed via the [`Stream`](./struct.Multipart.html#impl-Stream) API or the methods defined in this type.
+///
+/// # Examples
+///
+/// ```
+/// use multer::Multipart;
+/// use bytes::Bytes;
+/// use std::convert::Infallible;
+/// use futures::stream::once;
+///
+/// # async fn run() {
+/// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"My Field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+/// let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
+/// let mut multipart = Multipart::new(stream, "X-BOUNDARY");
+///
+/// while let Some(field) = multipart.next_field().await.unwrap() {
+///     println!("Field: {:?}", field.text().await)
+/// }
+/// # }
+/// # tokio::runtime::Runtime::new().unwrap().block_on(run());
+/// ```
+pub struct Multipart {
+    state: Arc<Mutex<MultipartState>>,
 }
 
-impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'static> Multipart<S> {
-    pub fn new<B: Into<String>>(stream: S, boundary: B) -> Multipart<S> {
+impl Multipart {
+    /// Construct a new `Multipart` instance with the given [`Bytes`](https://docs.rs/bytes/0.5.4/bytes/struct.Bytes.html) stream and the boundary.
+    pub fn new<S, O, E, B>(stream: S, boundary: B) -> Multipart
+    where
+        S: Stream<Item = Result<O, E>> + Send + Sync + 'static,
+        O: Into<Bytes> + 'static,
+        E: Into<Box<dyn std::error::Error + Send + Sync>> + 'static,
+        B: Into<String>,
+    {
+        let stream = stream
+            .map_ok(|b| b.into())
+            .map_err(|err| crate::Error::new(err.into().to_string()));
+
         let state = MultipartState {
             buffer: StreamBuffer::new(stream),
             boundary: boundary.into(),
             stage: StreamingStage::ReadingBoundary,
             is_prev_field_consumed: true,
             next_field_waker: None,
+            next_field_idx: 0,
         };
 
         Multipart {
@@ -37,21 +75,92 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
         }
     }
 
-    pub async fn next_field(&mut self) -> crate::Result<Option<Field<S>>> {
+    /// Construct a new `Multipart` instance with the given [`AsyncRead`](https://docs.rs/tokio/0.2.20/tokio/io/trait.AsyncRead.html) reader and the boundary.
+    ///
+    /// # Optional
+    ///
+    /// This requires the optional `reader` feature to be enabled.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use multer::Multipart;
+    /// use bytes::Bytes;
+    /// use std::convert::Infallible;
+    /// use futures::stream::once;
+    ///
+    /// # async fn run() {
+    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"My Field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+    /// let reader = data.as_bytes();
+    /// let mut multipart = Multipart::with_reader(reader, "X-BOUNDARY");
+    ///
+    /// while let Some(mut field) = multipart.next_field().await.unwrap() {
+    ///     while let Some(chunk) = field.chunk().await.unwrap() {
+    ///         println!("Chunk: {:?}", chunk);
+    ///     }
+    /// }
+    /// # }
+    /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
+    /// ```
+    #[cfg(feature = "reader")]
+    pub fn with_reader<R, B>(reader: R, boundary: B) -> Multipart
+    where
+        R: AsyncRead + Send + Sync + 'static,
+        B: Into<String>,
+    {
+        let stream = FramedRead::new(reader, BytesCodec::new());
+        Multipart::new(stream, boundary)
+    }
+
+    /// Yields the next [`Field`](./struct.Field.html) if available.
+    ///
+    /// For more info, go to [`Field`](./struct.Field.html#warning-about-leaks).
+    pub async fn next_field(&mut self) -> crate::Result<Option<Field>> {
         self.try_next().await
+    }
+
+    /// Yields the next [`Field`](./struct.Field.html) with their positioning index as a tuple `(usize, Field)`.
+    ///
+    /// For more info, go to [`Field`](./struct.Field.html#warning-about-leaks).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use multer::Multipart;
+    /// use bytes::Bytes;
+    /// use std::convert::Infallible;
+    /// use futures::stream::once;
+    ///
+    /// # async fn run() {
+    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"My Field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+    /// let reader = data.as_bytes();
+    /// let mut multipart = Multipart::with_reader(reader, "X-BOUNDARY");
+    ///
+    /// while let Some((idx, field)) = multipart.next_field_with_idx().await.unwrap() {
+    ///     println!("Index: {:?}, Content: {:?}", idx, field.text().await)
+    /// }
+    /// # }
+    /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
+    /// ```
+    pub async fn next_field_with_idx(&mut self) -> crate::Result<Option<(usize, Field)>> {
+        self.try_next().await.map(|f| f.map(|field| (field.index(), field)))
     }
 }
 
-impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'static> Stream for Multipart<S> {
-    type Item = Result<Field<S>, crate::Error>;
+impl Stream for Multipart {
+    type Item = Result<Field, crate::Error>;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        let mut mutex_guard = match Pin::new(&mut self.state.lock()).poll(cx) {
-            Poll::Ready(guard) => guard,
-            Poll::Pending => return Poll::Pending,
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        let mut mutex_guard = match self.state.lock() {
+            Ok(lock) => lock,
+            Err(err) => {
+                return Poll::Ready(Some(Err(
+                    crate::Error::new(err.to_string()).context("Couldn't lock the multipart state")
+                )));
+            }
         };
 
-        let state: &mut MultipartState<S> = mutex_guard.deref_mut();
+        let state: &mut MultipartState = mutex_guard.deref_mut();
 
         if state.stage == StreamingStage::Eof {
             return Poll::Ready(None);
@@ -66,6 +175,23 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
 
         if let Err(err) = stream_buffer.poll_stream(cx) {
             return Poll::Ready(Some(Err(err.context("Couldn't read data from the stream"))));
+        }
+
+        if state.stage == StreamingStage::CleaningPrevFieldData {
+            match stream_buffer.read_field_data(state.boundary.as_str()) {
+                Ok(Some((true, _))) => {
+                    state.stage = StreamingStage::ReadingBoundary;
+                }
+                Ok(Some((false, _))) => {
+                    return Poll::Pending;
+                }
+                Ok(None) => {
+                    return Poll::Pending;
+                }
+                Err(err) => {
+                    return Poll::Ready(Some(Err(err)));
+                }
+            }
         }
 
         if state.stage == StreamingStage::ReadingBoundary {
@@ -139,9 +265,12 @@ impl<S: Stream<Item = Result<Bytes, crate::Error>> + Send + Sync + Unpin + 'stat
             state.stage = StreamingStage::ReadingFieldData;
             state.is_prev_field_consumed = false;
 
+            let field_idx = state.next_field_idx;
+            state.next_field_idx += 1;
+
             drop(mutex_guard);
 
-            let next_field = Field::new(Arc::clone(&self.state), headers);
+            let next_field = Field::new(Arc::clone(&self.state), headers, field_idx);
             return Poll::Ready(Some(Ok(next_field)));
         }
 
