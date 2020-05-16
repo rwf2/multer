@@ -88,7 +88,7 @@
 //!     assert_eq!(content, "abcd");
 //! }
 //! # }
-//! # to
+//! # tokio::runtime::Runtime::new().unwrap().block_on(run());
 //! ```
 //!
 //! Please refer [`Constraints`](./struct.Constraints.html) for more info.
