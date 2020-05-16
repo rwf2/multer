@@ -1,11 +1,13 @@
+use crate::content_disposition::ContentDisposition;
+use crate::helpers;
 use crate::state::{MultipartState, StreamingStage};
+use crate::ErrorExt;
 #[cfg(feature = "json")]
 use crate::ResultExt;
-use crate::{constants, ErrorExt};
 use bytes::{Bytes, BytesMut};
 use encoding_rs::{Encoding, UTF_8};
 use futures::stream::{Stream, TryStreamExt};
-use http::header::{self, HeaderMap};
+use http::header::HeaderMap;
 #[cfg(feature = "json")]
 use serde::de::DeserializeOwned;
 #[cfg(feature = "json")]
@@ -29,7 +31,7 @@ use std::task::{Context, Poll};
 /// use futures::stream::once;
 ///
 /// # async fn run() {
-/// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"My Field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+/// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
 /// let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
 /// let mut multipart = Multipart::new(stream, "X-BOUNDARY");
 ///
@@ -59,63 +61,48 @@ pub struct Field {
 }
 
 struct FieldMeta {
-    name: Option<String>,
-    file_name: Option<String>,
+    content_disposition: ContentDisposition,
     content_type: Option<mime::Mime>,
     idx: usize,
 }
 
 impl Field {
-    pub(crate) fn new(state: Arc<Mutex<MultipartState>>, headers: HeaderMap, idx: usize) -> Self {
-        let (name, file_name) = Self::parse_content_disposition(&headers);
-        let content_type = Self::parse_content_type(&headers);
+    pub(crate) fn new(
+        state: Arc<Mutex<MultipartState>>,
+        headers: HeaderMap,
+        idx: usize,
+        content_disposition: ContentDisposition,
+    ) -> Self {
+        let content_type = helpers::parse_content_type(&headers);
 
         Field {
             state,
             headers,
             done: false,
             meta: FieldMeta {
-                name,
-                file_name,
+                content_disposition,
                 content_type,
                 idx,
             },
         }
     }
 
-    fn parse_content_disposition(headers: &HeaderMap) -> (Option<String>, Option<String>) {
-        let content_disposition = headers
-            .get(header::CONTENT_DISPOSITION)
-            .and_then(|val| val.to_str().ok());
-
-        let name = content_disposition
-            .and_then(|val| constants::CONTENT_DISPOSITION_FIELD_NAME_RE.captures(val))
-            .and_then(|cap| cap.get(1))
-            .map(|m| m.as_str().to_owned());
-
-        let file_name = content_disposition
-            .and_then(|val| constants::CONTENT_DISPOSITION_FILE_NAME_RE.captures(val))
-            .and_then(|cap| cap.get(1))
-            .map(|m| m.as_str().to_owned());
-
-        (name, file_name)
-    }
-
-    fn parse_content_type(headers: &HeaderMap) -> Option<mime::Mime> {
-        headers
-            .get(header::CONTENT_TYPE)
-            .and_then(|val| val.to_str().ok())
-            .and_then(|val| val.parse::<mime::Mime>().ok())
-    }
-
     /// The field name found in the [`Content-Disposition`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Disposition) header.
     pub fn name(&self) -> Option<&str> {
-        self.meta.name.as_ref().map(|name| name.as_str())
+        self.meta
+            .content_disposition
+            .field_name
+            .as_ref()
+            .map(|name| name.as_str())
     }
 
     /// The file name found in the [`Content-Disposition`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Disposition) header.
     pub fn file_name(&self) -> Option<&str> {
-        self.meta.file_name.as_ref().map(|file_name| file_name.as_str())
+        self.meta
+            .content_disposition
+            .file_name
+            .as_ref()
+            .map(|file_name| file_name.as_str())
     }
 
     /// Get the content type of the field.
@@ -139,7 +126,7 @@ impl Field {
     /// use futures::stream::once;
     ///
     /// # async fn run() {
-    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"My Field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
     /// let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
     /// let mut multipart = Multipart::new(stream, "X-BOUNDARY");
     ///
@@ -174,7 +161,7 @@ impl Field {
     /// use futures::stream::once;
     ///
     /// # async fn run() {
-    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"My Field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
     /// let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
     /// let mut multipart = Multipart::new(stream, "X-BOUNDARY");
     ///
@@ -212,7 +199,7 @@ impl Field {
     /// }
     ///
     /// # async fn run() {
-    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"My Field\"\r\n\r\n{ \"name\": \"Alice\" }\r\n--X-BOUNDARY--\r\n";
+    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\n{ \"name\": \"Alice\" }\r\n--X-BOUNDARY--\r\n";
     /// let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
     /// let mut multipart = Multipart::new(stream, "X-BOUNDARY");
     ///
@@ -251,7 +238,7 @@ impl Field {
     /// use futures::stream::once;
     ///
     /// # async fn run() {
-    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"My Field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
     /// let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
     /// let mut multipart = Multipart::new(stream, "X-BOUNDARY");
     ///
@@ -281,7 +268,7 @@ impl Field {
     /// use futures::stream::once;
     ///
     /// # async fn run() {
-    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"My Field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
     /// let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
     /// let mut multipart = Multipart::new(stream, "X-BOUNDARY");
     ///
@@ -322,7 +309,7 @@ impl Field {
     /// use futures::stream::once;
     ///
     /// # async fn run() {
-    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"My Field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
     /// let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
     /// let mut multipart = Multipart::new(stream, "X-BOUNDARY");
     ///
@@ -364,14 +351,26 @@ impl Stream for Field {
         }
 
         match stream_buffer.read_field_data(state.boundary.as_str()) {
-            Ok(Some((true, bytes))) => {
+            Ok(Some((done, bytes))) => {
+                state.curr_field_size_counter += bytes.len();
+
+                if state.curr_field_size_counter > state.curr_field_size_limit {
+                    return Poll::Ready(Some(Err(crate::Error::new(format!(
+                        "Incoming Field size exceeded the maximum limit: {} bytes, field name: {}",
+                        state.curr_field_size_limit,
+                        state.curr_field_name.as_deref().unwrap_or("<unknown>")
+                    )))));
+                }
+
                 drop(mutex_guard);
 
-                self.done = true;
-
-                Poll::Ready(Some(Ok(bytes)))
+                if done {
+                    self.done = true;
+                    Poll::Ready(Some(Ok(bytes)))
+                } else {
+                    Poll::Ready(Some(Ok(bytes)))
+                }
             }
-            Ok(Some((false, bytes))) => Poll::Ready(Some(Ok(bytes))),
             Ok(None) => Poll::Pending,
             Err(err) => Poll::Ready(Some(Err(err))),
         }

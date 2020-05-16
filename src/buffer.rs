@@ -8,10 +8,12 @@ pub(crate) struct StreamBuffer {
     pub(crate) eof: bool,
     pub(crate) buf: BytesMut,
     pub(crate) stream: Pin<Box<dyn Stream<Item = Result<Bytes, crate::Error>> + Send>>,
+    pub(crate) whole_stream_size_limit: usize,
+    pub(crate) stream_size_counter: usize,
 }
 
 impl StreamBuffer {
-    pub fn new<S>(stream: S) -> Self
+    pub fn new<S>(stream: S, whole_stream_size_limit: usize) -> Self
     where
         S: Stream<Item = Result<Bytes, crate::Error>> + Send + 'static,
     {
@@ -19,6 +21,8 @@ impl StreamBuffer {
             eof: false,
             buf: BytesMut::new(),
             stream: Box::pin(stream),
+            whole_stream_size_limit,
+            stream_size_counter: 0,
         }
     }
 
@@ -29,7 +33,18 @@ impl StreamBuffer {
 
         loop {
             match self.stream.as_mut().poll_next(cx) {
-                Poll::Ready(Some(Ok(data))) => self.buf.extend_from_slice(&data),
+                Poll::Ready(Some(Ok(data))) => {
+                    self.stream_size_counter += data.len();
+
+                    if self.stream_size_counter > self.whole_stream_size_limit {
+                        return Err(crate::Error::new(format!(
+                            "Stream size exceeded the maximum limit: {} bytes",
+                            self.whole_stream_size_limit
+                        )));
+                    }
+
+                    self.buf.extend_from_slice(&data)
+                }
                 Poll::Ready(Some(Err(err))) => return Err(err),
                 Poll::Ready(None) => {
                     self.eof = true;

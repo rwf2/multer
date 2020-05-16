@@ -1,5 +1,7 @@
 use crate::buffer::StreamBuffer;
 use crate::constants;
+use crate::constraints::Constraints;
+use crate::content_disposition::ContentDisposition;
 use crate::helpers;
 use crate::state::{MultipartState, StreamingStage};
 use crate::{ErrorExt, Field};
@@ -34,7 +36,7 @@ use tokio_util::codec::{BytesCodec, FramedRead};
 /// use futures::stream::once;
 ///
 /// # async fn run() {
-/// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"My Field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+/// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
 /// let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
 /// let mut multipart = Multipart::new(stream, "X-BOUNDARY");
 ///
@@ -46,6 +48,7 @@ use tokio_util::codec::{BytesCodec, FramedRead};
 /// ```
 pub struct Multipart {
     state: Arc<Mutex<MultipartState>>,
+    constraints: Constraints,
 }
 
 impl Multipart {
@@ -57,21 +60,57 @@ impl Multipart {
         E: Into<Box<dyn std::error::Error + Send + Sync>> + 'static,
         B: Into<String>,
     {
+        let constraints = Constraints::default();
+
         let stream = stream
             .map_ok(|b| b.into())
             .map_err(|err| crate::Error::new(err.into().to_string()));
 
         let state = MultipartState {
-            buffer: StreamBuffer::new(stream),
+            buffer: StreamBuffer::new(stream, constraints.size_limit.whole_stream),
             boundary: boundary.into(),
             stage: StreamingStage::ReadingBoundary,
             is_prev_field_consumed: true,
             next_field_waker: None,
             next_field_idx: 0,
+            curr_field_name: None,
+            curr_field_size_limit: constraints.size_limit.per_field,
+            curr_field_size_counter: 0,
         };
 
         Multipart {
             state: Arc::new(Mutex::new(state)),
+            constraints,
+        }
+    }
+
+    /// Construct a new `Multipart` instance with the given [`Bytes`](https://docs.rs/bytes/0.5.4/bytes/struct.Bytes.html) stream and the boundary.
+    pub fn new_with_constraints<S, O, E, B>(stream: S, boundary: B, constraints: Constraints) -> Multipart
+    where
+        S: Stream<Item = Result<O, E>> + Send + 'static,
+        O: Into<Bytes> + 'static,
+        E: Into<Box<dyn std::error::Error + Send + Sync>> + 'static,
+        B: Into<String>,
+    {
+        let stream = stream
+            .map_ok(|b| b.into())
+            .map_err(|err| crate::Error::new(err.into().to_string()));
+
+        let state = MultipartState {
+            buffer: StreamBuffer::new(stream, constraints.size_limit.whole_stream),
+            boundary: boundary.into(),
+            stage: StreamingStage::ReadingBoundary,
+            is_prev_field_consumed: true,
+            next_field_waker: None,
+            next_field_idx: 0,
+            curr_field_name: None,
+            curr_field_size_limit: constraints.size_limit.per_field,
+            curr_field_size_counter: 0,
+        };
+
+        Multipart {
+            state: Arc::new(Mutex::new(state)),
+            constraints,
         }
     }
 
@@ -90,7 +129,7 @@ impl Multipart {
     /// use futures::stream::once;
     ///
     /// # async fn run() {
-    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"My Field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
     /// let reader = data.as_bytes();
     /// let mut multipart = Multipart::with_reader(reader, "X-BOUNDARY");
     ///
@@ -110,6 +149,43 @@ impl Multipart {
     {
         let stream = FramedRead::new(reader, BytesCodec::new());
         Multipart::new(stream, boundary)
+    }
+
+    /// Construct a new `Multipart` instance with the given [`AsyncRead`](https://docs.rs/tokio/0.2.20/tokio/io/trait.AsyncRead.html) reader and the boundary.
+    ///
+    /// # Optional
+    ///
+    /// This requires the optional `reader` feature to be enabled.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use multer::Multipart;
+    /// use bytes::Bytes;
+    /// use std::convert::Infallible;
+    /// use futures::stream::once;
+    ///
+    /// # async fn run() {
+    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+    /// let reader = data.as_bytes();
+    /// let mut multipart = Multipart::with_reader(reader, "X-BOUNDARY");
+    ///
+    /// while let Some(mut field) = multipart.next_field().await.unwrap() {
+    ///     while let Some(chunk) = field.chunk().await.unwrap() {
+    ///         println!("Chunk: {:?}", chunk);
+    ///     }
+    /// }
+    /// # }
+    /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
+    /// ```
+    #[cfg(feature = "reader")]
+    pub fn with_reader_with_constraints<R, B>(reader: R, boundary: B, constraints: Constraints) -> Multipart
+    where
+        R: AsyncRead + Send + 'static,
+        B: Into<String>,
+    {
+        let stream = FramedRead::new(reader, BytesCodec::new());
+        Multipart::new_with_constraints(stream, boundary, constraints)
     }
 
     /// Yields the next [`Field`](./struct.Field.html) if available.
@@ -132,7 +208,7 @@ impl Multipart {
     /// use futures::stream::once;
     ///
     /// # async fn run() {
-    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"My Field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
     /// let reader = data.as_bytes();
     /// let mut multipart = Multipart::with_reader(reader, "X-BOUNDARY");
     ///
@@ -179,11 +255,22 @@ impl Stream for Multipart {
 
         if state.stage == StreamingStage::CleaningPrevFieldData {
             match stream_buffer.read_field_data(state.boundary.as_str()) {
-                Ok(Some((true, _))) => {
-                    state.stage = StreamingStage::ReadingBoundary;
-                }
-                Ok(Some((false, _))) => {
-                    return Poll::Pending;
+                Ok(Some((done, bytes))) => {
+                    state.curr_field_size_counter += bytes.len();
+
+                    if state.curr_field_size_counter > state.curr_field_size_limit {
+                        return Poll::Ready(Some(Err(crate::Error::new(format!(
+                            "Incoming Field size exceeded the maximum limit: {} bytes, field name: {}",
+                            state.curr_field_size_limit,
+                            state.curr_field_name.as_deref().unwrap_or("<unknown>")
+                        )))));
+                    }
+
+                    if done {
+                        state.stage = StreamingStage::ReadingBoundary;
+                    } else {
+                        return Poll::Pending;
+                    }
                 }
                 Ok(None) => {
                     return Poll::Pending;
@@ -268,9 +355,28 @@ impl Stream for Multipart {
             let field_idx = state.next_field_idx;
             state.next_field_idx += 1;
 
+            let content_disposition = ContentDisposition::parse(&headers);
+            let field_size_limit = self
+                .constraints
+                .size_limit
+                .extract_size_limit_for(content_disposition.field_name.as_deref());
+
+            state.curr_field_name = content_disposition.field_name.clone();
+            state.curr_field_size_limit = field_size_limit;
+            state.curr_field_size_counter = 0;
+
             drop(mutex_guard);
 
-            let next_field = Field::new(Arc::clone(&self.state), headers, field_idx);
+            let next_field = Field::new(Arc::clone(&self.state), headers, field_idx, content_disposition);
+            let field_name = next_field.name().map(|name| name.to_owned());
+
+            if !self.constraints.is_it_allowed(field_name.as_deref()) {
+                return Poll::Ready(Some(Err(crate::Error::new(format!(
+                    "Unknown field detected: {}",
+                    field_name.as_deref().unwrap_or("<no_name>")
+                )))));
+            }
+
             return Poll::Ready(Some(Ok(next_field)));
         }
 
