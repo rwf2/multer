@@ -60,12 +60,51 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 // Generate a byte stream and the boundary from somewhere e.g. server request body.
 async fn get_byte_stream_from_somewhere() -> (impl Stream<Item = Result<Bytes, Infallible>>, &'static str) {
-    let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"My Field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+    let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
     let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
     
     (stream, "X-BOUNDARY")
 }
 ``` 
+
+## Prevent DDoS Attack
+
+This crate also provides some APIs to prevent potential `DDoS attack` with fine grained control. It's recommended to add some constraints
+on field (specially text field) size to avoid potential `DDoS attack` from attackers running the server out of memory.
+
+An example:
+
+```rust
+use multer::{Multipart, Constraints, SizeLimit};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Create some constraints to be applied to the fields to prevent DDoS attack.
+    let constraints = Constraints::new()
+         // We only accept `my_text_field` and `my_file_field` fields,
+         // For any unknown field, we will throw an error.
+         .allowed_fields(vec!["my_text_field", "my_file_field"])
+         .size_limit(
+             SizeLimit::new()
+                 // Set 15mb as size limit for the whole stream body.
+                 .whole_stream(15 * 1024 * 1024)
+                 // Set 10mb as size limit for all fields.
+                 .per_field(10 * 1024 * 1024)
+                 // Set 30kb as size limit for our text field only.
+                 .for_field("my_text_field", 30 * 1024),
+         );
+
+    // Create a `Multipart` instance from a stream and the constraints.
+    let mut multipart = Multipart::new_with_constraints(some_stream, "X-BOUNDARY", constraints);
+
+    while let Some(field) = multipart.next_field().await.unwrap() {
+        let content = field.text().await.unwrap();
+        assert_eq!(content, "abcd");
+    } 
+   
+    Ok(())
+}
+```
 
 ## Usage with [hyper.rs](https://hyper.rs/) server
 

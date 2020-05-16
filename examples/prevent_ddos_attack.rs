@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use futures::stream::Stream;
 // Import multer types.
-use multer::Multipart;
+use multer::{Constraints, Multipart, SizeLimit};
 use std::convert::Infallible;
 
 #[tokio::main]
@@ -9,8 +9,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Generate a byte stream and the boundary from somewhere e.g. server request body.
     let (stream, boundary) = get_byte_stream_from_somewhere().await;
 
-    // Create a `Multipart` instance from that byte stream and the boundary.
-    let mut multipart = Multipart::new(stream, boundary);
+    // Create some constraints to be applied to the fields to prevent DDoS attack.
+    let constraints = Constraints::new()
+        // We only accept `my_text_field` and `my_file_field` fields,
+        // For any unknown field, we will throw an error.
+        .allowed_fields(vec!["my_text_field", "my_file_field"])
+        .size_limit(
+            SizeLimit::new()
+                // Set 15mb as size limit for the whole stream body.
+                .whole_stream(15 * 1024 * 1024)
+                // Set 10mb as size limit for all fields.
+                .per_field(10 * 1024 * 1024)
+                // Set 30kb as size limit for our text field only.
+                .for_field("my_text_field", 30 * 1024),
+        );
+
+    // Create a `Multipart` instance from that byte stream and the constraints.
+    let mut multipart = Multipart::new_with_constraints(stream, boundary, constraints);
 
     // Iterate over the fields, use `next_field()` to get the next field.
     while let Some(field) = multipart.next_field().await? {
