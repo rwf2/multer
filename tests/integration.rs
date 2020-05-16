@@ -114,7 +114,7 @@ async fn test_multipart_constraint_size_limit_whole_stream() {
 
     let constraints = Constraints::new()
         .allowed_fields(vec!["my_text_field", "my_file_field"])
-        .size_limit(SizeLimit::new().whole_stream(240));
+        .size_limit(SizeLimit::new().whole_stream(248));
 
     let mut m = Multipart::new_with_constraints(stream, "X-BOUNDARY", constraints);
 
@@ -160,7 +160,7 @@ async fn test_multipart_constraint_size_limit_per_field() {
 
     let constraints = Constraints::new()
         .allowed_fields(vec!["my_text_field", "my_file_field"])
-        .size_limit(SizeLimit::new().whole_stream(240).per_field(100));
+        .size_limit(SizeLimit::new().whole_stream(248).per_field(100));
 
     let mut m = Multipart::new_with_constraints(stream, "X-BOUNDARY", constraints);
 
@@ -186,7 +186,7 @@ async fn test_multipart_constraint_size_limit_per_field_size_exceeded() {
 
     let constraints = Constraints::new()
         .allowed_fields(vec!["my_text_field", "my_file_field"])
-        .size_limit(SizeLimit::new().whole_stream(240).per_field(10));
+        .size_limit(SizeLimit::new().whole_stream(248).per_field(10));
 
     let mut m = Multipart::new_with_constraints(stream, "X-BOUNDARY", constraints);
 
@@ -208,7 +208,7 @@ async fn test_multipart_constraint_size_limit_for_field() {
         .allowed_fields(vec!["my_text_field", "my_file_field"])
         .size_limit(
             SizeLimit::new()
-                .whole_stream(240)
+                .whole_stream(248)
                 .per_field(100)
                 .for_field("my_text_field", 4)
                 .for_field("my_file_field", 30),
@@ -240,7 +240,7 @@ async fn test_multipart_constraint_size_limit_for_field_size_exceeded() {
         .allowed_fields(vec!["my_text_field", "my_file_field"])
         .size_limit(
             SizeLimit::new()
-                .whole_stream(240)
+                .whole_stream(248)
                 .per_field(100)
                 .for_field("my_text_field", 4)
                 .for_field("my_file_field", 10),
