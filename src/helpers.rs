@@ -1,4 +1,3 @@
-use crate::error::ResultExt;
 use http::header::{self, HeaderMap, HeaderName, HeaderValue};
 use httparse::Header;
 use std::convert::TryFrom;
@@ -7,11 +6,15 @@ pub(crate) fn convert_raw_headers_to_header_map(raw_headers: &[Header]) -> crate
     let mut headers = HeaderMap::with_capacity(raw_headers.len());
 
     for raw_header in raw_headers {
-        let name = HeaderName::try_from(raw_header.name)
-            .context("Couldn't convert the raw header name to `HeaderName` type")?;
+        let name = HeaderName::try_from(raw_header.name).map_err(|err| crate::Error::DecodeHeaderName {
+            name: raw_header.name.to_owned(),
+            cause: err.into(),
+        })?;
 
-        let value = HeaderValue::try_from(raw_header.value)
-            .context("Couldn't convert the raw header value to `HeaderValue` type")?;
+        let value = HeaderValue::try_from(raw_header.value).map_err(|err| crate::Error::DecodeHeaderValue {
+            value: raw_header.value.to_owned(),
+            cause: err.into(),
+        })?;
 
         headers.insert(name, value);
     }

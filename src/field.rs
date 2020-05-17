@@ -1,9 +1,6 @@
 use crate::content_disposition::ContentDisposition;
 use crate::helpers;
 use crate::state::{MultipartState, StreamingStage};
-use crate::ErrorExt;
-#[cfg(feature = "json")]
-use crate::ResultExt;
 use bytes::{Bytes, BytesMut};
 use encoding_rs::{Encoding, UTF_8};
 use futures::stream::{Stream, TryStreamExt};
@@ -220,8 +217,7 @@ impl Field {
     pub async fn json<T: DeserializeOwned>(self) -> crate::Result<T> {
         self.bytes()
             .await
-            .context("Couldn't read field data as `Bytes`")
-            .and_then(|bytes| serde_json::from_slice(&bytes).context("Couldn't parse field data as JSON"))
+            .and_then(|bytes| serde_json::from_slice(&bytes).map_err(|err| crate::Error::DecodeJson(err.into())))
     }
 
     /// Get the full field data as text.
@@ -336,9 +332,7 @@ impl Stream for Field {
         let mut mutex_guard = match self.state.lock() {
             Ok(lock) => lock,
             Err(err) => {
-                return Poll::Ready(Some(Err(
-                    crate::Error::new(err.to_string()).context("Couldn't lock the multipart state")
-                )));
+                return Poll::Ready(Some(Err(crate::Error::LockFailure(err.to_string().into()))));
             }
         };
 
@@ -347,19 +341,18 @@ impl Stream for Field {
         let stream_buffer = &mut state.buffer;
 
         if let Err(err) = stream_buffer.poll_stream(cx) {
-            return Poll::Ready(Some(Err(err.context("Couldn't read data from the stream"))));
+            return Poll::Ready(Some(Err(crate::Error::StreamReadFailed(err.into()))));
         }
 
-        match stream_buffer.read_field_data(state.boundary.as_str()) {
+        match stream_buffer.read_field_data(state.boundary.as_str(), state.curr_field_name.as_deref()) {
             Ok(Some((done, bytes))) => {
                 state.curr_field_size_counter += bytes.len();
 
                 if state.curr_field_size_counter > state.curr_field_size_limit {
-                    return Poll::Ready(Some(Err(crate::Error::new(format!(
-                        "Incoming Field size exceeded the maximum limit: {} bytes, field name: {}",
-                        state.curr_field_size_limit,
-                        state.curr_field_name.as_deref().unwrap_or("<unknown>")
-                    )))));
+                    return Poll::Ready(Some(Err(crate::Error::FieldSizeExceeded {
+                        limit: state.curr_field_size_limit,
+                        field_name: state.curr_field_name.clone(),
+                    })));
                 }
 
                 drop(mutex_guard);
@@ -382,10 +375,7 @@ impl Drop for Field {
         let mut mutex_guard = match self.state.lock() {
             Ok(lock) => lock,
             Err(err) => {
-                log::error!(
-                    "{}",
-                    crate::Error::new(err.to_string()).context("Couldn't lock the multipart state")
-                );
+                log::error!("{}", crate::Error::LockFailure(err.to_string().into()));
                 return;
             }
         };

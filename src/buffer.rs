@@ -37,10 +37,9 @@ impl StreamBuffer {
                     self.stream_size_counter += data.len();
 
                     if self.stream_size_counter > self.whole_stream_size_limit {
-                        return Err(crate::Error::new(format!(
-                            "Stream size exceeded the maximum limit: {} bytes",
-                            self.whole_stream_size_limit
-                        )));
+                        return Err(crate::Error::StreamSizeExceeded {
+                            limit: self.whole_stream_size_limit,
+                        });
                     }
 
                     self.buf.extend_from_slice(&data)
@@ -67,10 +66,16 @@ impl StreamBuffer {
         twoway::find_bytes(&self.buf, pattern).map(|idx| self.buf.split_to(idx + pattern.len()).freeze())
     }
 
-    pub fn read_field_data(&mut self, boundary: &str) -> crate::Result<Option<(bool, Bytes)>> {
+    pub fn read_field_data(
+        &mut self,
+        boundary: &str,
+        field_name: Option<&str>,
+    ) -> crate::Result<Option<(bool, Bytes)>> {
         if self.buf.is_empty() {
             return if self.eof {
-                Err(crate::Error::new("Incomplete field data"))
+                Err(crate::Error::IncompleteFieldData {
+                    field_name: field_name.map(|s| s.to_owned()),
+                })
             } else {
                 Ok(None)
             };
@@ -108,7 +113,9 @@ impl StreamBuffer {
                                 let bytes = self.buf.split_to(idx).freeze();
 
                                 if self.eof {
-                                    Err(crate::Error::new("Incomplete field data"))
+                                    Err(crate::Error::IncompleteFieldData {
+                                        field_name: field_name.map(|s| s.to_owned()),
+                                    })
                                 } else {
                                     if bytes.is_empty() {
                                         Ok(None)
@@ -119,7 +126,9 @@ impl StreamBuffer {
                             }
                             None => {
                                 if self.eof {
-                                    Err(crate::Error::new("Incomplete field data"))
+                                    Err(crate::Error::IncompleteFieldData {
+                                        field_name: field_name.map(|s| s.to_owned()),
+                                    })
                                 } else {
                                     Ok(Some((false, self.read_full_buf())))
                                 }
@@ -128,7 +137,9 @@ impl StreamBuffer {
                     }
                     None => {
                         if self.eof {
-                            Err(crate::Error::new("Incomplete field data"))
+                            Err(crate::Error::IncompleteFieldData {
+                                field_name: field_name.map(|s| s.to_owned()),
+                            })
                         } else {
                             Ok(Some((false, self.read_full_buf())))
                         }

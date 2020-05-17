@@ -18,7 +18,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-multer = "1.0"
+multer = "1.1"
 ```
 
 # Basic Example
