@@ -26,7 +26,7 @@ pub enum Error {
     IncompleteHeaders,
 
     /// Failed to read headers.
-    #[display(fmt = "Failed to read headers")]
+    #[display(fmt = "Failed to read headers: {}", _0)]
     ReadHeaderFailed(BoxError),
 
     /// Failed to decode the field's raw header name to [`HeaderName`](https://docs.rs/http/0.2.1/http/header/struct.HeaderName.html) type.
@@ -54,7 +54,7 @@ pub enum Error {
     StreamSizeExceeded { limit: usize },
 
     /// Stream read failed.
-    #[display(fmt = "Stream read failed")]
+    #[display(fmt = "Stream read failed: {}", _0)]
     StreamReadFailed(BoxError),
 
     /// Failed to lock the multipart shared state for any changes.
@@ -75,7 +75,7 @@ pub enum Error {
 
     /// Failed to decode the field data as `JSON` in [`field.json()`](./struct.Field.html#method.json) method.
     #[cfg(feature = "json")]
-    #[display(fmt = "Failed to decode the field data as JSON")]
+    #[display(fmt = "Failed to decode the field data as JSON: {}", _0)]
     DecodeJson(BoxError),
 
     #[doc(hidden)]
