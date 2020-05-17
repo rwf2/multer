@@ -4,7 +4,7 @@ use crate::constraints::Constraints;
 use crate::content_disposition::ContentDisposition;
 use crate::helpers;
 use crate::state::{MultipartState, StreamingStage};
-use crate::{ErrorExt, Field};
+use crate::Field;
 use bytes::Bytes;
 use futures::stream::{Stream, TryStreamExt};
 use std::ops::DerefMut;
@@ -64,7 +64,7 @@ impl Multipart {
 
         let stream = stream
             .map_ok(|b| b.into())
-            .map_err(|err| crate::Error::new(err.into().to_string()));
+            .map_err(|err| crate::Error::StreamReadFailed(err.into()));
 
         let state = MultipartState {
             buffer: StreamBuffer::new(stream, constraints.size_limit.whole_stream),
@@ -94,7 +94,7 @@ impl Multipart {
     {
         let stream = stream
             .map_ok(|b| b.into())
-            .map_err(|err| crate::Error::new(err.into().to_string()));
+            .map_err(|err| crate::Error::StreamReadFailed(err.into()));
 
         let state = MultipartState {
             buffer: StreamBuffer::new(stream, constraints.size_limit.whole_stream),
@@ -230,9 +230,7 @@ impl Stream for Multipart {
         let mut mutex_guard = match self.state.lock() {
             Ok(lock) => lock,
             Err(err) => {
-                return Poll::Ready(Some(Err(
-                    crate::Error::new(err.to_string()).context("Couldn't lock the multipart state")
-                )));
+                return Poll::Ready(Some(Err(crate::Error::LockFailure(err.to_string().into()))));
             }
         };
 
@@ -250,20 +248,19 @@ impl Stream for Multipart {
         let stream_buffer = &mut state.buffer;
 
         if let Err(err) = stream_buffer.poll_stream(cx) {
-            return Poll::Ready(Some(Err(err.context("Couldn't read data from the stream"))));
+            return Poll::Ready(Some(Err(crate::Error::StreamReadFailed(err.into()))));
         }
 
         if state.stage == StreamingStage::CleaningPrevFieldData {
-            match stream_buffer.read_field_data(state.boundary.as_str()) {
+            match stream_buffer.read_field_data(state.boundary.as_str(), state.curr_field_name.as_deref()) {
                 Ok(Some((done, bytes))) => {
                     state.curr_field_size_counter += bytes.len();
 
                     if state.curr_field_size_counter > state.curr_field_size_limit {
-                        return Poll::Ready(Some(Err(crate::Error::new(format!(
-                            "Incoming Field size exceeded the maximum limit: {} bytes, field name: {}",
-                            state.curr_field_size_limit,
-                            state.curr_field_name.as_deref().unwrap_or("<unknown>")
-                        )))));
+                        return Poll::Ready(Some(Err(crate::Error::FieldSizeExceeded {
+                            limit: state.curr_field_size_limit,
+                            field_name: state.curr_field_name.clone(),
+                        })));
                     }
 
                     if done {
@@ -289,9 +286,7 @@ impl Stream for Multipart {
                 Some(bytes) => bytes,
                 None => {
                     return if stream_buffer.eof {
-                        Poll::Ready(Some(Err(crate::Error::new(
-                            "Incomplete stream, couldn't read the boundary",
-                        ))))
+                        Poll::Ready(Some(Err(crate::Error::IncompleteStream)))
                     } else {
                         Poll::Pending
                     };
@@ -306,9 +301,7 @@ impl Stream for Multipart {
             }
 
             if &boundary_bytes[..] != format!("{}{}{}", constants::BOUNDARY_EXT, boundary, constants::CRLF).as_bytes() {
-                return Poll::Ready(Some(Err(crate::Error::new(
-                    "The stream is not valid multipart/form-data",
-                ))));
+                return Poll::Ready(Some(Err(crate::Error::IncompleteStream)));
             } else {
                 state.stage = StreamingStage::ReadingFieldHeaders;
             }
@@ -319,9 +312,7 @@ impl Stream for Multipart {
                 Some(bytes) => bytes,
                 None => {
                     return if stream_buffer.eof {
-                        Poll::Ready(Some(Err(crate::Error::new(
-                            "Incomplete stream, couldn't read the field headers",
-                        ))))
+                        return Poll::Ready(Some(Err(crate::Error::IncompleteStream)));
                     } else {
                         Poll::Pending
                     };
@@ -340,12 +331,10 @@ impl Stream for Multipart {
                     }
                 }
                 Ok(httparse::Status::Partial) => {
-                    return Poll::Ready(Some(Err(crate::Error::new(
-                        "Incomplete headers, couldn't read the field headers completely",
-                    ))));
+                    return Poll::Ready(Some(Err(crate::Error::IncompleteHeaders)));
                 }
                 Err(err) => {
-                    return Poll::Ready(Some(Err(err.context("Failed to read the field headers"))));
+                    return Poll::Ready(Some(Err(crate::Error::ReadHeaderFailed(err.into()))));
                 }
             };
 
@@ -371,10 +360,9 @@ impl Stream for Multipart {
             let field_name = next_field.name().map(|name| name.to_owned());
 
             if !self.constraints.is_it_allowed(field_name.as_deref()) {
-                return Poll::Ready(Some(Err(crate::Error::new(format!(
-                    "Unknown field detected: {}",
-                    field_name.as_deref().unwrap_or("<no_name>")
-                )))));
+                return Poll::Ready(Some(Err(crate::Error::UnknownField {
+                    field_name: field_name.clone(),
+                })));
             }
 
             return Poll::Ready(Some(Ok(next_field)));

@@ -101,8 +101,6 @@
 
 pub use constraints::Constraints;
 pub use error::Error;
-#[doc(hidden)]
-pub use error::{ErrorExt, ResultExt};
 pub use field::Field;
 pub use multipart::Multipart;
 pub use size_limit::SizeLimit;
@@ -137,15 +135,15 @@ pub fn parse_boundary<T: AsRef<str>>(content_type: T) -> crate::Result<String> {
     let m = content_type
         .as_ref()
         .parse::<mime::Mime>()
-        .context("Failed to parse the content type as mime type")?;
+        .map_err(|err| crate::Error::DecodeContentType(err.into()))?;
 
     if !(m.type_() == mime::MULTIPART && m.subtype() == mime::FORM_DATA) {
-        return Err(crate::Error::new("Content-type is not multipart/form-data"));
+        return Err(crate::Error::NoMultipart);
     }
 
     m.get_param(mime::BOUNDARY)
         .map(|name| name.as_str().to_owned())
-        .ok_or_else(|| crate::Error::new("No boundary value found"))
+        .ok_or_else(|| crate::Error::NoBoundary)
 }
 
 #[cfg(test)]

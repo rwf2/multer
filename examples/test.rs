@@ -4,7 +4,6 @@ use futures::TryStreamExt;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server};
 use multer::{Constraints, Error, Field, Multipart, SizeLimit};
-use multer::{ErrorExt, ResultExt};
 use std::{convert::Infallible, net::SocketAddr};
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
@@ -27,7 +26,7 @@ async fn handle(req: Request<Body>) -> Result<Response<Body>, Infallible> {
     // let mut multipart = Multipart::with_reader(reader, "X-INSOMNIA-BOUNDARY");
 
     let multipart_constraints = Constraints::new()
-        .allowed_fields(vec!["a"])
+        .allowed_fields(vec!["a", "b"])
         .size_limit(SizeLimit::new().per_field(30).for_field("a", 10));
 
     let mut multipart = Multipart::new_with_constraints(stream, "X-INSOMNIA-BOUNDARY", multipart_constraints);
