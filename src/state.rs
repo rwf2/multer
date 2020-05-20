@@ -9,8 +9,8 @@ pub(crate) struct MultipartState {
     pub(crate) next_field_waker: Option<Waker>,
     pub(crate) next_field_idx: usize,
     pub(crate) curr_field_name: Option<String>,
-    pub(crate) curr_field_size_limit: usize,
-    pub(crate) curr_field_size_counter: usize,
+    pub(crate) curr_field_size_limit: u64,
+    pub(crate) curr_field_size_counter: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

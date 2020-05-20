@@ -5,26 +5,26 @@ use std::collections::HashMap;
 ///
 /// Please refer [`Constraints`](./struct.Constraints.html) for more info.
 pub struct SizeLimit {
-    pub(crate) whole_stream: usize,
-    pub(crate) per_field: usize,
-    pub(crate) field_map: HashMap<String, usize>,
+    pub(crate) whole_stream: u64,
+    pub(crate) per_field: u64,
+    pub(crate) field_map: HashMap<String, u64>,
 }
 
 impl SizeLimit {
-    /// Creates a default size limit which is [`usize::MAX`](https://doc.rust-lang.org/stable/std/primitive.usize.html#associatedconstant.MAX) for the whole stream
+    /// Creates a default size limit which is [`u64::MAX`](https://doc.rust-lang.org/stable/std/primitive.u64.html#associatedconstant.MAX) for the whole stream
     /// and for each field.
     pub fn new() -> SizeLimit {
         SizeLimit::default()
     }
 
     /// Sets size limit for the whole stream.
-    pub fn whole_stream(mut self, limit: usize) -> SizeLimit {
+    pub fn whole_stream(mut self, limit: u64) -> SizeLimit {
         self.whole_stream = limit;
         self
     }
 
     /// Sets size limit for each field.
-    pub fn per_field(mut self, limit: usize) -> SizeLimit {
+    pub fn per_field(mut self, limit: u64) -> SizeLimit {
         self.per_field = limit;
         self
     }
@@ -33,12 +33,12 @@ impl SizeLimit {
     ///
     /// It is useful when you want to set a size limit on a textual field which will be stored in memory
     /// to avoid potential `DDoS attack` from attackers running the server out of memory.
-    pub fn for_field<N: Into<String>>(mut self, field_name: N, limit: usize) -> SizeLimit {
+    pub fn for_field<N: Into<String>>(mut self, field_name: N, limit: u64) -> SizeLimit {
         self.field_map.insert(field_name.into(), limit);
         self
     }
 
-    pub(crate) fn extract_size_limit_for(&self, field: Option<&str>) -> usize {
+    pub(crate) fn extract_size_limit_for(&self, field: Option<&str>) -> u64 {
         field
             .and_then(|field| self.field_map.get(&field.to_owned()))
             .copied()
