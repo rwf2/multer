@@ -254,7 +254,7 @@ impl Stream for Multipart {
         if state.stage == StreamingStage::CleaningPrevFieldData {
             match stream_buffer.read_field_data(state.boundary.as_str(), state.curr_field_name.as_deref()) {
                 Ok(Some((done, bytes))) => {
-                    state.curr_field_size_counter += bytes.len();
+                    state.curr_field_size_counter += bytes.len() as u64;
 
                     if state.curr_field_size_counter > state.curr_field_size_limit {
                         return Poll::Ready(Some(Err(crate::Error::FieldSizeExceeded {

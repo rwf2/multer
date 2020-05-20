@@ -47,11 +47,11 @@ pub enum Error {
         limit,
         "field_name.as_deref().unwrap_or(\"<unknown>\")"
     )]
-    FieldSizeExceeded { limit: usize, field_name: Option<String> },
+    FieldSizeExceeded { limit: u64, field_name: Option<String> },
 
     /// The incoming stream size exceeded the maximum limit.
     #[display(fmt = "Stream size exceeded the maximum limit: {} bytes", limit)]
-    StreamSizeExceeded { limit: usize },
+    StreamSizeExceeded { limit: u64 },
 
     /// Stream read failed.
     #[display(fmt = "Stream read failed: {}", _0)]

@@ -8,12 +8,12 @@ pub(crate) struct StreamBuffer {
     pub(crate) eof: bool,
     pub(crate) buf: BytesMut,
     pub(crate) stream: Pin<Box<dyn Stream<Item = Result<Bytes, crate::Error>> + Send>>,
-    pub(crate) whole_stream_size_limit: usize,
-    pub(crate) stream_size_counter: usize,
+    pub(crate) whole_stream_size_limit: u64,
+    pub(crate) stream_size_counter: u64,
 }
 
 impl StreamBuffer {
-    pub fn new<S>(stream: S, whole_stream_size_limit: usize) -> Self
+    pub fn new<S>(stream: S, whole_stream_size_limit: u64) -> Self
     where
         S: Stream<Item = Result<Bytes, crate::Error>> + Send + 'static,
     {
@@ -34,7 +34,7 @@ impl StreamBuffer {
         loop {
             match self.stream.as_mut().poll_next(cx) {
                 Poll::Ready(Some(Ok(data))) => {
-                    self.stream_size_counter += data.len();
+                    self.stream_size_counter += data.len() as u64;
 
                     if self.stream_size_counter > self.whole_stream_size_limit {
                         return Err(crate::Error::StreamSizeExceeded {
