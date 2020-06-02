@@ -9,18 +9,19 @@ use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 async fn handle(req: Request<Body>) -> Result<Response<Body>, Infallible> {
-    let mut stream = req.into_body();
+    let stream = req.into_body();
 
-    let multipart_constraints = Constraints::new()
-        .allowed_fields(vec!["a", "b"])
-        .size_limit(SizeLimit::new().per_field(30).for_field("a", 10));
+    // let multipart_constraints = Constraints::new()
+    //     .allowed_fields(vec!["a", "b"])
+    //     .size_limit(SizeLimit::new().per_field(30).for_field("a", 10));
 
-    let mut multipart = Multipart::new_with_constraints(stream, "X-INSOMNIA-BOUNDARY", multipart_constraints);
+    let mut multipart = Multipart::new(stream, "X-INSOMNIA-BOUNDARY");
 
     while let Some(field) = multipart.next_field().await.unwrap() {
-        println!("{:?}", field.name());
+        println!("name: {:?}", field.name());
+        println!("filename: {:?}", field.file_name());
         let text = field.text().await.unwrap();
-        println!("{}", text);
+        println!("content: {}", text);
     }
 
     Ok(Response::new("Hello, World!".into()))
