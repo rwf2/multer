@@ -8,19 +8,19 @@ pub(crate) struct ContentDisposition {
 
 impl ContentDisposition {
     pub fn parse(headers: &HeaderMap) -> ContentDisposition {
-        let content_disposition = headers
-            .get(header::CONTENT_DISPOSITION)
-            .and_then(|val| val.to_str().ok());
+        let content_disposition = headers.get(header::CONTENT_DISPOSITION).map(|val| val.as_bytes());
 
         let field_name = content_disposition
             .and_then(|val| constants::CONTENT_DISPOSITION_FIELD_NAME_RE.captures(val))
             .and_then(|cap| cap.get(1))
-            .map(|m| m.as_str().to_owned());
+            .map(|m| m.as_bytes().to_vec())
+            .and_then(|bytes| String::from_utf8(bytes).ok());
 
         let file_name = content_disposition
             .and_then(|val| constants::CONTENT_DISPOSITION_FILE_NAME_RE.captures(val))
             .and_then(|cap| cap.get(1))
-            .map(|m| m.as_str().to_owned());
+            .map(|m| m.as_bytes().to_vec())
+            .and_then(|bytes| String::from_utf8(bytes).ok());
 
         ContentDisposition { field_name, file_name }
     }
