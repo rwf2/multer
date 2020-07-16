@@ -9,7 +9,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Generate a byte stream and the boundary from somewhere e.g. server request body.
     let (stream, boundary) = get_byte_stream_from_somewhere().await;
 
-    // Create some constraints to be applied to the fields to prevent DDoS attack.
+    // Create some constraints to be applied to the fields to prevent DoS attacks.
     let constraints = Constraints::new()
         // We only accept `my_text_field` and `my_file_field` fields,
         // For any unknown field, we will throw an error.

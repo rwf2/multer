@@ -1,7 +1,7 @@
 use crate::constants;
 use std::collections::HashMap;
 
-/// Represents size limit of the stream to prevent DDoS attack.
+/// Represents size limit of the stream to prevent DoS attacks.
 ///
 /// Please refer [`Constraints`](./struct.Constraints.html) for more info.
 pub struct SizeLimit {
@@ -32,7 +32,7 @@ impl SizeLimit {
     /// Sets size limit for a specific field, it overrides the `per_field` value for this field.
     ///
     /// It is useful when you want to set a size limit on a textual field which will be stored in memory
-    /// to avoid potential `DDoS attack` from attackers running the server out of memory.
+    /// to avoid potential DoS attacks from attackers running the server out of memory.
     pub fn for_field<N: Into<String>>(mut self, field_name: N, limit: u64) -> SizeLimit {
         self.field_map.insert(field_name.into(), limit);
         self
