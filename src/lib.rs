@@ -49,10 +49,10 @@
 //! }
 //! ```
 //!
-//! ## Prevent DDoS Attack
+//! ## Prevent Denial of Service (DoS) Attack
 //!
-//! This crate also provides some APIs to prevent potential `DDoS attack` with fine grained control. It's recommended to add some constraints
-//! on field (specially text field) size to avoid potential `DDoS attack` from attackers running the server out of memory.
+//! This crate also provides some APIs to prevent potential DoS attacks with fine grained control. It's recommended to add some constraints
+//! on field (specially text field) size to avoid potential DoS attacks from attackers running the server out of memory.
 //!
 //! An example:
 //!
@@ -65,7 +65,7 @@
 //! # async fn run() {
 //! # let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
 //! # let some_stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
-//! // Create some constraints to be applied to the fields to prevent DDoS attack.
+//! // Create some constraints to be applied to the fields to prevent DoS attack.
 //! let constraints = Constraints::new()
 //!      // We only accept `my_text_field` and `my_file_field` fields,
 //!      // For any unknown field, we will throw an error.
