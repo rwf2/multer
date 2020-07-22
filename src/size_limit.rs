@@ -11,7 +11,7 @@ pub struct SizeLimit {
 }
 
 impl SizeLimit {
-    /// Creates a default size limit which is [`u64::MAX`](https://doc.rust-lang.org/stable/std/primitive.u64.html#associatedconstant.MAX) for the whole stream
+    /// Creates a default size limit which is [`std::u64::MAX`](https://doc.rust-lang.org/stable/std/u64/constant.MAX.html) for the whole stream
     /// and for each field.
     pub fn new() -> SizeLimit {
         SizeLimit::default()
