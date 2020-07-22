@@ -18,4 +18,4 @@ Run an example:
 
 * [`parse_async_read`](parse_async_read.rs) - Shows how to parse `multipart/form-data` from an [`AsyncRead`](https://docs.rs/tokio/0.2.20/tokio/io/trait.AsyncRead.html).
 
-* [`prevent_ddos_attack`](prevent_ddos_attack.rs) - Shows how to apply some rules to prevent potential DDoS attack while handling `multipart/form-data`.
+* [`prevent_dos_attack`](prevent_dos_attack.rs) - Shows how to apply some rules to prevent potential DoS attacks while handling `multipart/form-data`.
