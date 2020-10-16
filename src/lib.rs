@@ -99,7 +99,7 @@
 //!
 //! For more examples, please visit [examples](https://github.com/rousan/multer-rs/tree/master/examples).
 
-pub use bytes::Bytes;
+pub use bytes;
 
 pub use constraints::Constraints;
 pub use error::Error;
