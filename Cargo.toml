@@ -26,26 +26,27 @@ reader = ["tokio", "tokio-util"]
 [dependencies]
 log = "0.4"
 bytes = "0.5"
-futures = "0.3"
+futures-util = { version = "0.3", default-features = false }
 twoway = "0.2"
 http = "0.2"
 httparse = "1.3"
 mime = "0.3"
 regex = "1.3"
-lazy_static = "1.4.0"
+once_cell = "1.4"
 encoding_rs = "0.8"
 derive_more = "0.99"
 
 serde = { version = "1.0", optional = true }
 serde_json = { version = "1.0", optional = true }
-tokio = { version = "0.2", features = [],  optional = true}
-tokio-util = { version = "0.3.1", features = ["codec"],  optional = true}
+tokio = { version = "0.3", optional = true }
+tokio-util = { version = "0.4.0", features = ["codec"],  optional = true }
 
 [dev-dependencies]
-serde = { version = "1.0", features = ["derive"] }
-tokio = { version = "0.2", features = ["full"] }
+futures = { version = "0.3", default-features = false }
 hyper = "0.13"
 routerify = "1.1"
+serde = { version = "1.0", features = ["derive"] }
+tokio = { version = "0.3", features = ["full"] }
 
 [[example]]
 name = "test"

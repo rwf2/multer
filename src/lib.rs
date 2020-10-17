@@ -1,6 +1,6 @@
 //! An async parser for `multipart/form-data` content-type in Rust.
 //!
-//! It accepts a [`Stream`](https://docs.rs/futures/0.3.5/futures/stream/trait.Stream.html) of [`Bytes`](https://docs.rs/bytes/0.5.4/bytes/struct.Bytes.html) as
+//! It accepts a [`Stream`](https://docs.rs/futures/0.3/futures/stream/trait.Stream.html) of [`Bytes`](https://docs.rs/bytes/0.5/bytes/struct.Bytes.html) as
 //! a source, so that It can be plugged into any async Rust environment e.g. any async server.
 //!
 //! # Examples

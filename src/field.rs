@@ -3,13 +3,10 @@ use crate::helpers;
 use crate::state::{MultipartState, StreamingStage};
 use bytes::{Bytes, BytesMut};
 use encoding_rs::{Encoding, UTF_8};
-use futures::stream::{Stream, TryStreamExt};
+use futures_util::stream::{Stream, TryStreamExt};
 use http::header::HeaderMap;
 #[cfg(feature = "json")]
 use serde::de::DeserializeOwned;
-#[cfg(feature = "json")]
-use serde_json;
-use std::borrow::Cow;
 use std::ops::DerefMut;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -86,20 +83,12 @@ impl Field {
 
     /// The field name found in the [`Content-Disposition`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Disposition) header.
     pub fn name(&self) -> Option<&str> {
-        self.meta
-            .content_disposition
-            .field_name
-            .as_ref()
-            .map(|name| name.as_str())
+        self.meta.content_disposition.field_name.as_deref()
     }
 
     /// The file name found in the [`Content-Disposition`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Disposition) header.
     pub fn file_name(&self) -> Option<&str> {
-        self.meta
-            .content_disposition
-            .file_name
-            .as_ref()
-            .map(|file_name| file_name.as_str())
+        self.meta.content_disposition.file_name.as_deref()
     }
 
     /// Get the content type of the field.
@@ -107,12 +96,12 @@ impl Field {
         self.meta.content_type.as_ref()
     }
 
-    /// Get a map of headers as [`HeaderMap`](https://docs.rs/http/0.2.1/http/header/struct.HeaderMap.html).
+    /// Get a map of headers as [`HeaderMap`](https://docs.rs/http/0.2/http/header/struct.HeaderMap.html).
     pub fn headers(&self) -> &HeaderMap {
         &self.headers
     }
 
-    /// Get the full data of the field as [`Bytes`](https://docs.rs/bytes/0.5.4/bytes/struct.Bytes.html).
+    /// Get the full data of the field as [`Bytes`](https://docs.rs/bytes/0.5/bytes/struct.Bytes.html).
     ///
     /// # Examples
     ///
@@ -253,7 +242,7 @@ impl Field {
     ///
     /// This method decodes the field data with `BOM sniffing` and with malformed sequences replaced with the `REPLACEMENT CHARACTER`.
     /// You can provide a default encoding for decoding the raw message, while the `charset` parameter of `Content-Type` header is still prioritized.
-    /// For more information about the possible encoding name, please go to [encoding_rs](https://docs.rs/encoding_rs/0.8.22/encoding_rs/) docs.
+    /// For more information about the possible encoding name, please go to [encoding_rs](https://docs.rs/encoding_rs/0.8/encoding_rs/) docs.
     ///
     /// # Examples
     ///
@@ -288,10 +277,7 @@ impl Field {
 
         let (text, _, _) = encoding.decode(&bytes);
 
-        match text {
-            Cow::Owned(s) => Ok(s),
-            Cow::Borrowed(s) => Ok(String::from(s)),
-        }
+        Ok(text.into_owned())
     }
 
     /// Get the index of this field in order they appeared in the stream.
@@ -391,7 +377,7 @@ impl Drop for Field {
         state.is_prev_field_consumed = true;
 
         if let Some(waker) = state.next_field_waker.take() {
-            waker.clone().wake();
+            waker.wake_by_ref();
         }
     }
 }

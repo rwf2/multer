@@ -6,7 +6,7 @@ use crate::helpers;
 use crate::state::{MultipartState, StreamingStage};
 use crate::Field;
 use bytes::Bytes;
-use futures::stream::{Stream, TryStreamExt};
+use futures_util::stream::{Stream, TryStreamExt};
 use std::ops::DerefMut;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -18,7 +18,7 @@ use tokio_util::codec::{BytesCodec, FramedRead};
 
 /// Represents the implementation of `multipart/form-data` formatted data.
 ///
-/// This will parse the source stream into [`Field`](./struct.Field.html) instances via its [`Stream`](https://docs.rs/futures/0.3.5/futures/stream/trait.Stream.html)
+/// This will parse the source stream into [`Field`](./struct.Field.html) instances via its [`Stream`](https://docs.rs/futures/0.3/futures/stream/trait.Stream.html)
 /// implementation.
 ///
 /// To maintain consistency in the underlying stream, this will not yield more than one [`Field`](./struct.Field.html) at a time.
@@ -52,7 +52,7 @@ pub struct Multipart {
 }
 
 impl Multipart {
-    /// Construct a new `Multipart` instance with the given [`Bytes`](https://docs.rs/bytes/0.5.4/bytes/struct.Bytes.html) stream and the boundary.
+    /// Construct a new `Multipart` instance with the given [`Bytes`](https://docs.rs/bytes/0.5/bytes/struct.Bytes.html) stream and the boundary.
     pub fn new<S, O, E, B>(stream: S, boundary: B) -> Multipart
     where
         S: Stream<Item = Result<O, E>> + Send + 'static,
@@ -60,31 +60,10 @@ impl Multipart {
         E: Into<Box<dyn std::error::Error + Send + Sync>> + 'static,
         B: Into<String>,
     {
-        let constraints = Constraints::default();
-
-        let stream = stream
-            .map_ok(|b| b.into())
-            .map_err(|err| crate::Error::StreamReadFailed(err.into()));
-
-        let state = MultipartState {
-            buffer: StreamBuffer::new(stream, constraints.size_limit.whole_stream),
-            boundary: boundary.into(),
-            stage: StreamingStage::ReadingBoundary,
-            is_prev_field_consumed: true,
-            next_field_waker: None,
-            next_field_idx: 0,
-            curr_field_name: None,
-            curr_field_size_limit: constraints.size_limit.per_field,
-            curr_field_size_counter: 0,
-        };
-
-        Multipart {
-            state: Arc::new(Mutex::new(state)),
-            constraints,
-        }
+        Self::new_with_constraints(stream, boundary, Constraints::default())
     }
 
-    /// Construct a new `Multipart` instance with the given [`Bytes`](https://docs.rs/bytes/0.5.4/bytes/struct.Bytes.html) stream and the boundary.
+    /// Construct a new `Multipart` instance with the given [`Bytes`](https://docs.rs/bytes/0.5/bytes/struct.Bytes.html) stream and the boundary.
     pub fn new_with_constraints<S, O, E, B>(stream: S, boundary: B, constraints: Constraints) -> Multipart
     where
         S: Stream<Item = Result<O, E>> + Send + 'static,
@@ -360,9 +339,7 @@ impl Stream for Multipart {
             let field_name = next_field.name().map(|name| name.to_owned());
 
             if !self.constraints.is_it_allowed(field_name.as_deref()) {
-                return Poll::Ready(Some(Err(crate::Error::UnknownField {
-                    field_name: field_name.clone(),
-                })));
+                return Poll::Ready(Some(Err(crate::Error::UnknownField { field_name })));
             }
 
             return Poll::Ready(Some(Ok(next_field)));

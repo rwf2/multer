@@ -6,6 +6,7 @@ type BoxError = Box<dyn std::error::Error + Send + Sync>;
 /// A set of errors that can occur during parsing multipart stream and in other operations.
 #[derive(Display)]
 #[display(fmt = "multer: {}")]
+#[non_exhaustive]
 pub enum Error {
     /// An unknown field is detected when multipart [`constraints`](./struct.Constraints.html#method.allowed_fields) are added.
     #[display(
@@ -29,11 +30,11 @@ pub enum Error {
     #[display(fmt = "Failed to read headers: {}", _0)]
     ReadHeaderFailed(BoxError),
 
-    /// Failed to decode the field's raw header name to [`HeaderName`](https://docs.rs/http/0.2.1/http/header/struct.HeaderName.html) type.
+    /// Failed to decode the field's raw header name to [`HeaderName`](https://docs.rs/http/0.2/http/header/struct.HeaderName.html) type.
     #[display(fmt = "Failed to decode the field's raw header name: {}", cause)]
     DecodeHeaderName { name: String, cause: BoxError },
 
-    /// Failed to decode the field's raw header value to [`HeaderValue`](https://docs.rs/http/0.2.1/http/header/struct.HeaderValue.html) type.
+    /// Failed to decode the field's raw header value to [`HeaderValue`](https://docs.rs/http/0.2/http/header/struct.HeaderValue.html) type.
     #[display(fmt = "Failed to decode the field's raw header value: {}", cause)]
     DecodeHeaderValue { value: Vec<u8>, cause: BoxError },
 
@@ -65,7 +66,7 @@ pub enum Error {
     #[display(fmt = "The Content-Type is not multipart/form-data")]
     NoMultipart,
 
-    /// Failed to convert the `Content-Type` to [`mime::Mime`](https://docs.rs/mime/0.3.16/mime/struct.Mime.html) type.
+    /// Failed to convert the `Content-Type` to [`mime::Mime`](https://docs.rs/mime/0.3/mime/struct.Mime.html) type.
     #[display(fmt = "Failed to convert the Content-Type to `mime::Mime` type: {}", _0)]
     DecodeContentType(BoxError),
 
@@ -77,9 +78,6 @@ pub enum Error {
     #[cfg(feature = "json")]
     #[display(fmt = "Failed to decode the field data as JSON: {}", _0)]
     DecodeJson(BoxError),
-
-    #[doc(hidden)]
-    __Nonexhaustive,
 }
 
 impl Debug for Error {

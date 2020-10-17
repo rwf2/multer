@@ -1,6 +1,6 @@
 use crate::constants;
 use bytes::{Bytes, BytesMut};
-use futures::stream::Stream;
+use futures_util::stream::Stream;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -89,67 +89,41 @@ impl StreamBuffer {
                 let bytes = self.buf.split_to(idx).freeze();
 
                 // discard \r\n.
-                drop(self.buf.split_to(2).freeze());
+                drop(self.buf.split_to(2));
 
                 Ok(Some((true, bytes)))
             }
             None => {
-                let buf_len = self.buf.len();
-                let rem_boundary_part_max_len = b_len - 1;
-                let rem_boundary_part_idx;
-
-                if buf_len >= rem_boundary_part_max_len {
-                    rem_boundary_part_idx = buf_len - rem_boundary_part_max_len
-                } else {
-                    rem_boundary_part_idx = 0
+                if self.eof {
+                    return Err(crate::Error::IncompleteFieldData {
+                        field_name: field_name.map(|s| s.to_owned()),
+                    });
                 }
 
-                match twoway::rfind_bytes(&self.buf[rem_boundary_part_idx..], constants::CR.as_bytes()) {
-                    Some(rel_idx) => {
-                        let idx = rel_idx + rem_boundary_part_idx;
+                let rem_boundary_part_idx = self.buf.len().checked_sub(b_len - 1).unwrap_or_default();
 
-                        match twoway::find_bytes(boundary_deriv.as_bytes(), &self.buf[idx..]) {
-                            Some(_) => {
-                                let bytes = self.buf.split_to(idx).freeze();
+                Ok(
+                    match twoway::rfind_bytes(&self.buf[rem_boundary_part_idx..], constants::CR.as_bytes())
+                        .map(|rel_idx| rel_idx + rem_boundary_part_idx)
+                        .filter(|&idx| twoway::find_bytes(boundary_deriv.as_bytes(), &self.buf[idx..]).is_some())
+                    {
+                        Some(idx) => {
+                            let bytes = self.buf.split_to(idx).freeze();
 
-                                if self.eof {
-                                    Err(crate::Error::IncompleteFieldData {
-                                        field_name: field_name.map(|s| s.to_owned()),
-                                    })
-                                } else {
-                                    if bytes.is_empty() {
-                                        Ok(None)
-                                    } else {
-                                        Ok(Some((false, bytes)))
-                                    }
-                                }
-                            }
-                            None => {
-                                if self.eof {
-                                    Err(crate::Error::IncompleteFieldData {
-                                        field_name: field_name.map(|s| s.to_owned()),
-                                    })
-                                } else {
-                                    Ok(Some((false, self.read_full_buf())))
-                                }
+                            if bytes.is_empty() {
+                                None
+                            } else {
+                                Some((false, bytes))
                             }
                         }
-                    }
-                    None => {
-                        if self.eof {
-                            Err(crate::Error::IncompleteFieldData {
-                                field_name: field_name.map(|s| s.to_owned()),
-                            })
-                        } else {
-                            Ok(Some((false, self.read_full_buf())))
-                        }
-                    }
-                }
+                        None => Some((false, self.read_full_buf())),
+                    },
+                )
             }
         }
     }
 
     pub fn read_full_buf(&mut self) -> Bytes {
-        self.buf.split_to(self.buf.len()).freeze()
+        self.buf.split().freeze()
     }
 }
