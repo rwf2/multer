@@ -1,6 +1,7 @@
 use crate::constants;
 use http::header::{self, HeaderMap};
 
+#[derive(Debug)]
 pub(crate) struct ContentDisposition {
     pub(crate) field_name: Option<String>,
     pub(crate) file_name: Option<String>,

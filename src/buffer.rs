@@ -1,6 +1,7 @@
 use crate::constants;
 use bytes::{Bytes, BytesMut};
 use futures::stream::Stream;
+use std::fmt;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -26,7 +27,7 @@ impl StreamBuffer {
         }
     }
 
-    pub fn poll_stream(&mut self, cx: &mut Context) -> Result<(), crate::Error> {
+    pub fn poll_stream(&mut self, cx: &mut Context<'_>) -> Result<(), crate::Error> {
         if self.eof {
             return Ok(());
         }
@@ -149,5 +150,11 @@ impl StreamBuffer {
 
     pub fn read_full_buf(&mut self) -> Bytes {
         self.buf.split_to(self.buf.len()).freeze()
+    }
+}
+
+impl fmt::Debug for StreamBuffer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StreamBuffer").finish()
     }
 }
