@@ -207,6 +207,7 @@ impl Multipart {
     /// use std::convert::Infallible;
     /// use futures::stream::once;
     ///
+    /// # #[cfg(feature = "reader")]
     /// # async fn run() {
     /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
     /// let reader = data.as_bytes();
@@ -216,6 +217,7 @@ impl Multipart {
     ///     println!("Index: {:?}, Content: {:?}", idx, field.text().await)
     /// }
     /// # }
+    /// # #[cfg(feature = "reader")]
     /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
     /// ```
     pub async fn next_field_with_idx(&mut self) -> crate::Result<Option<(usize, Field)>> {
