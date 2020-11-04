@@ -116,12 +116,10 @@ impl StreamBuffer {
                                     Err(crate::Error::IncompleteFieldData {
                                         field_name: field_name.map(|s| s.to_owned()),
                                     })
+                                } else if bytes.is_empty() {
+                                    Ok(None)
                                 } else {
-                                    if bytes.is_empty() {
-                                        Ok(None)
-                                    } else {
-                                        Ok(Some((false, bytes)))
-                                    }
+                                    Ok(Some((false, bytes)))
                                 }
                             }
                             None => {

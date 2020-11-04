@@ -7,8 +7,6 @@ use futures::stream::{Stream, TryStreamExt};
 use http::header::HeaderMap;
 #[cfg(feature = "json")]
 use serde::de::DeserializeOwned;
-#[cfg(feature = "json")]
-use serde_json;
 use std::borrow::Cow;
 use std::ops::DerefMut;
 use std::pin::Pin;
@@ -86,20 +84,12 @@ impl Field {
 
     /// The field name found in the [`Content-Disposition`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Disposition) header.
     pub fn name(&self) -> Option<&str> {
-        self.meta
-            .content_disposition
-            .field_name
-            .as_ref()
-            .map(|name| name.as_str())
+        self.meta.content_disposition.field_name.as_deref()
     }
 
     /// The file name found in the [`Content-Disposition`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Disposition) header.
     pub fn file_name(&self) -> Option<&str> {
-        self.meta
-            .content_disposition
-            .file_name
-            .as_ref()
-            .map(|file_name| file_name.as_str())
+        self.meta.content_disposition.file_name.as_deref()
     }
 
     /// Get the content type of the field.
@@ -391,7 +381,7 @@ impl Drop for Field {
         state.is_prev_field_consumed = true;
 
         if let Some(waker) = state.next_field_waker.take() {
-            waker.clone().wake();
+            waker.wake();
         }
     }
 }

@@ -362,9 +362,7 @@ impl Stream for Multipart {
             let field_name = next_field.name().map(|name| name.to_owned());
 
             if !self.constraints.is_it_allowed(field_name.as_deref()) {
-                return Poll::Ready(Some(Err(crate::Error::UnknownField {
-                    field_name: field_name.clone(),
-                })));
+                return Poll::Ready(Some(Err(crate::Error::UnknownField { field_name })));
             }
 
             return Poll::Ready(Some(Ok(next_field)));

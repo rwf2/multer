@@ -145,7 +145,7 @@ pub fn parse_boundary<T: AsRef<str>>(content_type: T) -> crate::Result<String> {
 
     m.get_param(mime::BOUNDARY)
         .map(|name| name.as_str().to_owned())
-        .ok_or_else(|| crate::Error::NoBoundary)
+        .ok_or(crate::Error::NoBoundary)
 }
 
 #[cfg(test)]
