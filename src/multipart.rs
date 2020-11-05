@@ -6,14 +6,19 @@ use crate::helpers;
 use crate::state::{MultipartState, StreamingStage};
 use crate::Field;
 use bytes::Bytes;
+#[cfg(not(feature = "tokio-io"))]
+use futures::io::AsyncRead;
 use futures::stream::{Stream, TryStreamExt};
+#[cfg(not(feature = "tokio-io"))]
+use futures_codec::{BytesCodec, FramedRead};
+use std::marker::Unpin;
 use std::ops::DerefMut;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
-#[cfg(feature = "reader")]
+#[cfg(feature = "tokio-io")]
 use tokio::io::AsyncRead;
-#[cfg(feature = "reader")]
+#[cfg(feature = "tokio-io")]
 use tokio_util::codec::{BytesCodec, FramedRead};
 
 /// Represents the implementation of `multipart/form-data` formatted data.
@@ -115,11 +120,7 @@ impl Multipart {
         }
     }
 
-    /// Construct a new `Multipart` instance with the given [`AsyncRead`](https://docs.rs/tokio/0.2.20/tokio/io/trait.AsyncRead.html) reader and the boundary.
-    ///
-    /// # Optional
-    ///
-    /// This requires the optional `reader` feature to be enabled.
+    /// Construct a new `Multipart` instance with the given [`AsyncRead`][] reader and the boundary.
     ///
     /// # Examples
     ///
@@ -139,21 +140,21 @@ impl Multipart {
     /// # }
     /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
     /// ```
-    #[cfg(feature = "reader")]
+    ///
+    /// [`AsyncRead`]: https://docs.rs/futures-io/0.3.7/futures_io/trait.AsyncRead.html
     pub fn with_reader<R, B>(reader: R, boundary: B) -> Multipart
     where
-        R: AsyncRead + Send + 'static,
+        R: AsyncRead + Unpin + Send + 'static,
         B: Into<String>,
     {
+        #[cfg(feature = "tokio-io")]
         let stream = FramedRead::new(reader, BytesCodec::new());
+        #[cfg(not(feature = "tokio-io"))]
+        let stream = FramedRead::new(reader, BytesCodec);
         Multipart::new(stream, boundary)
     }
 
-    /// Construct a new `Multipart` instance with the given [`AsyncRead`](https://docs.rs/tokio/0.2.20/tokio/io/trait.AsyncRead.html) reader and the boundary.
-    ///
-    /// # Optional
-    ///
-    /// This requires the optional `reader` feature to be enabled.
+    /// Construct a new `Multipart` instance with the given [`AsyncRead`][] reader and the boundary.
     ///
     /// # Examples
     ///
@@ -173,13 +174,17 @@ impl Multipart {
     /// # }
     /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
     /// ```
-    #[cfg(feature = "reader")]
+    ///
+    /// [`AsyncRead`]: https://docs.rs/futures-io/0.3.7/futures_io/trait.AsyncRead.html
     pub fn with_reader_with_constraints<R, B>(reader: R, boundary: B, constraints: Constraints) -> Multipart
     where
-        R: AsyncRead + Send + 'static,
+        R: AsyncRead + Unpin + Send + 'static,
         B: Into<String>,
     {
+        #[cfg(feature = "tokio-io")]
         let stream = FramedRead::new(reader, BytesCodec::new());
+        #[cfg(not(feature = "tokio-io"))]
+        let stream = FramedRead::new(reader, BytesCodec);
         Multipart::new_with_constraints(stream, boundary, constraints)
     }
 
@@ -197,8 +202,6 @@ impl Multipart {
     /// # Examples
     ///
     /// ```
-    /// # #[cfg(feature = "reader")]
-    /// # {
     /// use multer::Multipart;
     ///
     /// # async fn run() {
@@ -211,7 +214,6 @@ impl Multipart {
     /// }
     /// # }
     /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
-    /// # }
     /// ```
     pub async fn next_field_with_idx(&mut self) -> crate::Result<Option<(usize, Field)>> {
         self.try_next().await.map(|f| f.map(|field| (field.index(), field)))
