@@ -6,6 +6,7 @@ type BoxError = Box<dyn std::error::Error + Send + Sync>;
 /// A set of errors that can occur during parsing multipart stream and in other operations.
 #[derive(Display)]
 #[display(fmt = "multer: {}")]
+#[non_exhaustive]
 pub enum Error {
     /// An unknown field is detected when multipart [`constraints`](./struct.Constraints.html#method.allowed_fields) are added.
     #[display(
@@ -77,9 +78,6 @@ pub enum Error {
     #[cfg(feature = "json")]
     #[display(fmt = "Failed to decode the field data as JSON: {}", _0)]
     DecodeJson(BoxError),
-
-    #[doc(hidden)]
-    __Nonexhaustive,
 }
 
 impl Debug for Error {

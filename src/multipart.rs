@@ -46,6 +46,7 @@ use tokio_util::codec::{BytesCodec, FramedRead};
 /// # }
 /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
 /// ```
+#[derive(Debug)]
 pub struct Multipart {
     state: Arc<Mutex<MultipartState>>,
     constraints: Constraints,
@@ -124,9 +125,6 @@ impl Multipart {
     ///
     /// ```
     /// use multer::Multipart;
-    /// use bytes::Bytes;
-    /// use std::convert::Infallible;
-    /// use futures::stream::once;
     ///
     /// # async fn run() {
     /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
@@ -161,9 +159,6 @@ impl Multipart {
     ///
     /// ```
     /// use multer::Multipart;
-    /// use bytes::Bytes;
-    /// use std::convert::Infallible;
-    /// use futures::stream::once;
     ///
     /// # async fn run() {
     /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
@@ -202,10 +197,9 @@ impl Multipart {
     /// # Examples
     ///
     /// ```
+    /// # #[cfg(feature = "reader")]
+    /// # {
     /// use multer::Multipart;
-    /// use bytes::Bytes;
-    /// use std::convert::Infallible;
-    /// use futures::stream::once;
     ///
     /// # async fn run() {
     /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
@@ -217,6 +211,7 @@ impl Multipart {
     /// }
     /// # }
     /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
+    /// # }
     /// ```
     pub async fn next_field_with_idx(&mut self) -> crate::Result<Option<(usize, Field)>> {
         self.try_next().await.map(|f| f.map(|field| (field.index(), field)))
@@ -226,7 +221,7 @@ impl Multipart {
 impl Stream for Multipart {
     type Item = Result<Field, crate::Error>;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut mutex_guard = match self.state.lock() {
             Ok(lock) => lock,
             Err(err) => {
@@ -360,9 +355,7 @@ impl Stream for Multipart {
             let field_name = next_field.name().map(|name| name.to_owned());
 
             if !self.constraints.is_it_allowed(field_name.as_deref()) {
-                return Poll::Ready(Some(Err(crate::Error::UnknownField {
-                    field_name: field_name.clone(),
-                })));
+                return Poll::Ready(Some(Err(crate::Error::UnknownField { field_name })));
             }
 
             return Poll::Ready(Some(Ok(next_field)));

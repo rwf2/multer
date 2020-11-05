@@ -4,6 +4,7 @@ use std::collections::HashMap;
 /// Represents size limit of the stream to prevent DoS attacks.
 ///
 /// Please refer [`Constraints`](./struct.Constraints.html) for more info.
+#[derive(Debug)]
 pub struct SizeLimit {
     pub(crate) whole_stream: u64,
     pub(crate) per_field: u64,

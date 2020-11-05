@@ -48,11 +48,6 @@ hyper = "0.13"
 routerify = "1.1"
 
 [[example]]
-name = "test"
-path = "examples/test.rs"
-required-features = ["json", "reader"]
-
-[[example]]
 name = "parse_async_read"
 path = "examples/parse_async_read.rs"
 required-features = ["reader"]
