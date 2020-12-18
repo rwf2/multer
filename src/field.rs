@@ -7,7 +7,6 @@ use futures_util::stream::{Stream, TryStreamExt};
 use http::header::HeaderMap;
 #[cfg(feature = "json")]
 use serde::de::DeserializeOwned;
-use std::borrow::Cow;
 use std::ops::DerefMut;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};

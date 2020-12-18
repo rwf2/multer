@@ -39,10 +39,12 @@ derive_more = "0.99"
 
 serde = { version = "1.0", optional = true }
 serde_json = { version = "1.0", optional = true }
-tokio = { version = "0.3", optional = true }
-tokio-util = { version = "0.4.0", features = ["codec"],  optional = true }
+tokio = { version = "0.2", optional = true }
+tokio-util = { version = "0.3.1", features = ["codec"],  optional = true }
 
 [dev-dependencies]
 futures = { version = "0.3", default-features = false }
+serde = { version = "1.0", features = ["derive"] }
+tokio = { version = "0.2", features = ["full"] }
 hyper = "0.13"
 routerify = "1.1"
