@@ -1,6 +1,7 @@
 use crate::buffer::StreamBuffer;
 use std::task::Waker;
 
+#[derive(Debug)]
 pub(crate) struct MultipartState {
     pub(crate) buffer: StreamBuffer,
     pub(crate) boundary: String,

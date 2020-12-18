@@ -7,6 +7,7 @@ use futures_util::stream::{Stream, TryStreamExt};
 use http::header::HeaderMap;
 #[cfg(feature = "json")]
 use serde::de::DeserializeOwned;
+use std::borrow::Cow;
 use std::ops::DerefMut;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -47,6 +48,7 @@ use std::task::{Context, Poll};
 /// then the parent [`Multipart`](./struct.Multipart.html) will never be able to yield the next field in the stream.
 /// The task waiting on the [`Multipart`](./struct.Multipart.html) will also never be notified, which, depending on the executor implementation,
 /// may cause a deadlock.
+#[derive(Debug)]
 pub struct Field {
     state: Arc<Mutex<MultipartState>>,
     headers: HeaderMap,
@@ -54,6 +56,7 @@ pub struct Field {
     meta: FieldMeta,
 }
 
+#[derive(Debug)]
 struct FieldMeta {
     content_disposition: ContentDisposition,
     content_type: Option<mime::Mime>,
@@ -227,7 +230,7 @@ impl Field {
     /// let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
     /// let mut multipart = Multipart::new(stream, "X-BOUNDARY");
     ///
-    /// while let Some(mut field) = multipart.next_field().await.unwrap() {
+    /// while let Some(field) = multipart.next_field().await.unwrap() {
     ///    let content = field.text().await.unwrap();
     ///    assert_eq!(content, "abcd");
     /// }
@@ -257,7 +260,7 @@ impl Field {
     /// let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
     /// let mut multipart = Multipart::new(stream, "X-BOUNDARY");
     ///
-    /// while let Some(mut field) = multipart.next_field().await.unwrap() {
+    /// while let Some(field) = multipart.next_field().await.unwrap() {
     ///    let content = field.text_with_charset("utf-8").await.unwrap();
     ///    assert_eq!(content, "abcd");
     /// }
@@ -310,7 +313,7 @@ impl Field {
 impl Stream for Field {
     type Item = Result<Bytes, crate::Error>;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if self.done {
             return Poll::Ready(None);
         }
@@ -377,7 +380,7 @@ impl Drop for Field {
         state.is_prev_field_consumed = true;
 
         if let Some(waker) = state.next_field_waker.take() {
-            waker.wake_by_ref();
+            waker.wake();
         }
     }
 }

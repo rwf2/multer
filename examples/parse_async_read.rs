@@ -1,4 +1,8 @@
+#[cfg(not(feature = "tokio-io"))]
+use futures::io::AsyncRead;
+#[cfg(feature = "tokio-io")]
 use tokio::io::AsyncRead;
+
 // Import multer types.
 use multer::Multipart;
 
