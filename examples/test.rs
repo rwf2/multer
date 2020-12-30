@@ -1,12 +1,7 @@
-use bytes::Bytes;
-use futures::stream::{Stream, StreamExt};
-use futures::TryStreamExt;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server};
-use multer::{Constraints, Error, Field, Multipart, SizeLimit};
+use multer::Multipart;
 use std::{convert::Infallible, net::SocketAddr};
-use tokio::fs::{File, OpenOptions};
-use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 async fn handle(req: Request<Body>) -> Result<Response<Body>, Infallible> {
     let stream = req.into_body();
