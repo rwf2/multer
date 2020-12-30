@@ -14,7 +14,7 @@ use std::task::{Context, Poll};
 #[cfg(feature = "reader")]
 use tokio::io::AsyncRead;
 #[cfg(feature = "reader")]
-use tokio_util::codec::{BytesCodec, FramedRead};
+use tokio_util::io::ReaderStream;
 
 /// Represents the implementation of `multipart/form-data` formatted data.
 ///
@@ -147,7 +147,7 @@ impl Multipart {
         R: AsyncRead + Send + 'static,
         B: Into<String>,
     {
-        let stream = FramedRead::new(reader, BytesCodec::new());
+        let stream = ReaderStream::new(reader);
         Multipart::new(stream, boundary)
     }
 
@@ -184,7 +184,7 @@ impl Multipart {
         R: AsyncRead + Send + 'static,
         B: Into<String>,
     {
-        let stream = FramedRead::new(reader, BytesCodec::new());
+        let stream = ReaderStream::new(reader);
         Multipart::new_with_constraints(stream, boundary, constraints)
     }
 
