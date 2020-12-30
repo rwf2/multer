@@ -67,6 +67,10 @@ impl StreamBuffer {
         twoway::find_bytes(&self.buf, pattern).map(|idx| self.buf.split_to(idx + pattern.len()).freeze())
     }
 
+    pub fn read_to(&mut self, pattern: &[u8]) -> Option<Bytes> {
+        twoway::find_bytes(&self.buf, pattern).map(|idx| self.buf.split_to(idx).freeze())
+    }
+
     pub fn read_field_data(
         &mut self,
         boundary: &str,

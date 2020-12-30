@@ -17,6 +17,7 @@ pub(crate) struct MultipartState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StreamingStage {
     CleaningPrevFieldData,
+    FindingFirstBoundary,
     ReadingBoundary,
     ReadingFieldHeaders,
     ReadingFieldData,

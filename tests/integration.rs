@@ -64,6 +64,31 @@ async fn test_multipart_clean_field() {
 }
 
 #[tokio::test]
+async fn test_multipart_header() {
+    let should_pass = [
+        "ignored header\r\n--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n",
+        "\r\nignored header\r\n--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n",
+        "\r\n--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n",
+        "\r\n\r\n--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n",
+    ];
+
+    for data in should_pass.iter() {
+        let stream = stream::iter(
+            data.chars()
+                .map(|ch| ch.to_string())
+                .map(|part| multer::Result::Ok(Bytes::copy_from_slice(part.as_bytes()))),
+        );
+
+        let mut m = Multipart::new(stream, "X-BOUNDARY");
+
+        assert_eq!(
+            m.next_field().await.unwrap().unwrap().text().await.unwrap(),
+            "abcd".to_owned()
+        );
+    }
+}
+
+#[tokio::test]
 async fn test_multipart_constraint_allowed_fields_normal() {
     let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_file_field\"; filename=\"a-text-file.txt\"\r\nContent-Type: text/plain\r\n\r\nHello world\nHello\r\nWorld\rAgain\r\n--X-BOUNDARY--\r\n";
     let stream = stream::iter(

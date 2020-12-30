@@ -68,7 +68,7 @@ impl Multipart {
         let state = MultipartState {
             buffer: StreamBuffer::new(stream, constraints.size_limit.whole_stream),
             boundary: boundary.into(),
-            stage: StreamingStage::ReadingBoundary,
+            stage: StreamingStage::FindingFirstBoundary,
             is_prev_field_consumed: true,
             next_field_waker: None,
             next_field_idx: 0,
@@ -98,7 +98,7 @@ impl Multipart {
         let state = MultipartState {
             buffer: StreamBuffer::new(stream, constraints.size_limit.whole_stream),
             boundary: boundary.into(),
-            stage: StreamingStage::ReadingBoundary,
+            stage: StreamingStage::FindingFirstBoundary,
             is_prev_field_consumed: true,
             next_field_waker: None,
             next_field_idx: 0,
@@ -246,6 +246,22 @@ impl Stream for Multipart {
 
         if let Err(err) = stream_buffer.poll_stream(cx) {
             return Poll::Ready(Some(Err(crate::Error::StreamReadFailed(err.into()))));
+        }
+
+        if state.stage == StreamingStage::FindingFirstBoundary {
+            let boundary = &state.boundary;
+            let boundary_deriv = format!("{}{}", constants::BOUNDARY_EXT, boundary);
+            match stream_buffer.read_to(boundary_deriv.as_bytes()) {
+                Some(_) => state.stage = StreamingStage::ReadingBoundary,
+                None => {
+                    if let Err(err) = stream_buffer.poll_stream(cx) {
+                        return Poll::Ready(Some(Err(crate::Error::StreamReadFailed(err.into()))));
+                    }
+                    if stream_buffer.eof {
+                        return Poll::Ready(Some(Err(crate::Error::IncompleteStream)));
+                    }
+                }
+            }
         }
 
         if state.stage == StreamingStage::CleaningPrevFieldData {
