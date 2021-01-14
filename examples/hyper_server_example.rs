@@ -1,5 +1,5 @@
-use hyper::service::{make_service_fn, service_fn};
 use hyper::server::Server;
+use hyper::service::{make_service_fn, service_fn};
 use hyper::{header::CONTENT_TYPE, Body, Request, Response, StatusCode};
 // Import the multer types.
 use multer::Multipart;

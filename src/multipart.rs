@@ -12,7 +12,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 #[cfg(feature = "tokio-io")]
-use {tokio_util::io::ReaderStream, tokio::io::AsyncRead};
+use {tokio::io::AsyncRead, tokio_util::io::ReaderStream};
 
 /// Represents the implementation of `multipart/form-data` formatted data.
 ///
