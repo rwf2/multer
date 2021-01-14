@@ -19,14 +19,15 @@ features = ["all"]
 
 [features]
 default = []
-all = ["json", "reader"]
+all = ["json"]
 json = ["serde", "serde_json"]
-reader = ["tokio", "tokio-util"]
+tokio-io = ["tokio", "tokio-util"]
 
 [dependencies]
 log = "0.4"
 bytes = "1.0"
 futures = "0.3"
+futures_codec = "0.4.1"
 twoway = "0.2"
 http = "0.2"
 httparse = "1.3"
@@ -45,11 +46,6 @@ tokio-util = { version = "0.6", features = ["io"],  optional = true}
 serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.0", features = ["full"] }
 hyper = { version = "0.14", features = ["server", "http1", "stream", "tcp"] }
-
-[[example]]
-name = "test"
-path = "examples/test.rs"
-required-features = ["json", "reader"]
 
 [[example]]
 name = "parse_async_read"

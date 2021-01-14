@@ -42,6 +42,7 @@ use crate::size_limit::SizeLimit;
 /// # }
 /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
 /// ```
+#[derive(Debug)]
 pub struct Constraints {
     pub(crate) size_limit: SizeLimit,
     pub(crate) allowed_fields: Option<Vec<String>>,

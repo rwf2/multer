@@ -99,6 +99,17 @@
 //!
 //! For more examples, please visit [examples](https://github.com/rousan/multer-rs/tree/master/examples).
 
+#![forbid(unsafe_code, future_incompatible)]
+#![warn(
+    missing_debug_implementations,
+    rust_2018_idioms,
+    trivial_casts,
+    unused_qualifications
+)]
+#![doc(test(attr(deny(rust_2018_idioms, warnings))))]
+#![doc(test(attr(allow(unused_extern_crates, unused_variables))))]
+
+pub use bytes;
 pub use constraints::Constraints;
 pub use error::Error;
 pub use field::Field;
@@ -131,7 +142,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// # }
 /// # run();
 /// ```
-pub fn parse_boundary<T: AsRef<str>>(content_type: T) -> crate::Result<String> {
+pub fn parse_boundary<T: AsRef<str>>(content_type: T) -> Result<String> {
     let m = content_type
         .as_ref()
         .parse::<mime::Mime>()
@@ -143,7 +154,7 @@ pub fn parse_boundary<T: AsRef<str>>(content_type: T) -> crate::Result<String> {
 
     m.get_param(mime::BOUNDARY)
         .map(|name| name.as_str().to_owned())
-        .ok_or_else(|| crate::Error::NoBoundary)
+        .ok_or(crate::Error::NoBoundary)
 }
 
 #[cfg(test)]

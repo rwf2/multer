@@ -6,12 +6,17 @@ use crate::helpers;
 use crate::state::{MultipartState, StreamingStage};
 use crate::Field;
 use bytes::Bytes;
+#[cfg(not(feature = "tokio-io"))]
+use futures::io::AsyncRead;
 use futures::stream::{Stream, TryStreamExt};
+#[cfg(not(feature = "tokio-io"))]
+use futures_codec::{BytesCodec, FramedRead};
+use std::marker::Unpin;
 use std::ops::DerefMut;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
-#[cfg(feature = "reader")]
+#[cfg(feature = "tokio-io")]
 use tokio::io::AsyncRead;
 #[cfg(feature = "reader")]
 use tokio_util::io::ReaderStream;
@@ -46,6 +51,7 @@ use tokio_util::io::ReaderStream;
 /// # }
 /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
 /// ```
+#[derive(Debug)]
 pub struct Multipart {
     state: Arc<Mutex<MultipartState>>,
     constraints: Constraints,
@@ -114,19 +120,12 @@ impl Multipart {
         }
     }
 
-    /// Construct a new `Multipart` instance with the given [`AsyncRead`](https://docs.rs/tokio/0.2.20/tokio/io/trait.AsyncRead.html) reader and the boundary.
-    ///
-    /// # Optional
-    ///
-    /// This requires the optional `reader` feature to be enabled.
+    /// Construct a new `Multipart` instance with the given [`AsyncRead`][] reader and the boundary.
     ///
     /// # Examples
     ///
     /// ```
     /// use multer::Multipart;
-    /// use bytes::Bytes;
-    /// use std::convert::Infallible;
-    /// use futures::stream::once;
     ///
     /// # async fn run() {
     /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
@@ -141,29 +140,23 @@ impl Multipart {
     /// # }
     /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
     /// ```
-    #[cfg(feature = "reader")]
+    ///
+    /// [`AsyncRead`]: https://docs.rs/futures-io/0.3.7/futures_io/trait.AsyncRead.html
     pub fn with_reader<R, B>(reader: R, boundary: B) -> Multipart
     where
-        R: AsyncRead + Send + 'static,
+        R: AsyncRead + Unpin + Send + 'static,
         B: Into<String>,
     {
         let stream = ReaderStream::new(reader);
         Multipart::new(stream, boundary)
     }
 
-    /// Construct a new `Multipart` instance with the given [`AsyncRead`](https://docs.rs/tokio/0.2.20/tokio/io/trait.AsyncRead.html) reader and the boundary.
-    ///
-    /// # Optional
-    ///
-    /// This requires the optional `reader` feature to be enabled.
+    /// Construct a new `Multipart` instance with the given [`AsyncRead`][] reader and the boundary.
     ///
     /// # Examples
     ///
     /// ```
     /// use multer::Multipart;
-    /// use bytes::Bytes;
-    /// use std::convert::Infallible;
-    /// use futures::stream::once;
     ///
     /// # async fn run() {
     /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
@@ -178,10 +171,11 @@ impl Multipart {
     /// # }
     /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
     /// ```
-    #[cfg(feature = "reader")]
+    ///
+    /// [`AsyncRead`]: https://docs.rs/futures-io/0.3.7/futures_io/trait.AsyncRead.html
     pub fn with_reader_with_constraints<R, B>(reader: R, boundary: B, constraints: Constraints) -> Multipart
     where
-        R: AsyncRead + Send + 'static,
+        R: AsyncRead + Unpin + Send + 'static,
         B: Into<String>,
     {
         let stream = ReaderStream::new(reader);
@@ -203,9 +197,6 @@ impl Multipart {
     ///
     /// ```
     /// use multer::Multipart;
-    /// use bytes::Bytes;
-    /// use std::convert::Infallible;
-    /// use futures::stream::once;
     ///
     /// # async fn run() {
     /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
@@ -226,7 +217,7 @@ impl Multipart {
 impl Stream for Multipart {
     type Item = Result<Field, crate::Error>;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut mutex_guard = match self.state.lock() {
             Ok(lock) => lock,
             Err(err) => {
@@ -360,9 +351,7 @@ impl Stream for Multipart {
             let field_name = next_field.name().map(|name| name.to_owned());
 
             if !self.constraints.is_it_allowed(field_name.as_deref()) {
-                return Poll::Ready(Some(Err(crate::Error::UnknownField {
-                    field_name: field_name.clone(),
-                })));
+                return Poll::Ready(Some(Err(crate::Error::UnknownField { field_name })));
             }
 
             return Poll::Ready(Some(Ok(next_field)));
