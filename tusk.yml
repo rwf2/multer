@@ -8,9 +8,6 @@ tasks:
     run:
       - command: cargo install cargo-watch
       - command: cargo install releez
-  dev:
-    run:
-      - command: cargo watch --watch ./src --watch ./examples/test.rs -x 'run --example test --features="all"'
   check:dev:
     run:
       - command: cargo watch --watch ./src -x 'check --features="all"'

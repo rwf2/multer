@@ -6,20 +6,13 @@ use crate::helpers;
 use crate::state::{MultipartState, StreamingStage};
 use crate::Field;
 use bytes::Bytes;
-#[cfg(not(feature = "tokio-io"))]
-use futures::io::AsyncRead;
 use futures::stream::{Stream, TryStreamExt};
-#[cfg(not(feature = "tokio-io"))]
-use futures_codec::{BytesCodec, FramedRead};
-use std::marker::Unpin;
 use std::ops::DerefMut;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 #[cfg(feature = "tokio-io")]
-use tokio::io::AsyncRead;
-#[cfg(feature = "reader")]
-use tokio_util::io::ReaderStream;
+use {tokio_util::io::ReaderStream, tokio::io::AsyncRead};
 
 /// Represents the implementation of `multipart/form-data` formatted data.
 ///
@@ -122,6 +115,10 @@ impl Multipart {
 
     /// Construct a new `Multipart` instance with the given [`AsyncRead`][] reader and the boundary.
     ///
+    /// # Optional
+    ///
+    /// This requires the optional `tokio-io` feature to be enabled.
+    ///
     /// # Examples
     ///
     /// ```
@@ -142,6 +139,7 @@ impl Multipart {
     /// ```
     ///
     /// [`AsyncRead`]: https://docs.rs/futures-io/0.3.7/futures_io/trait.AsyncRead.html
+    #[cfg(feature = "tokio-io")]
     pub fn with_reader<R, B>(reader: R, boundary: B) -> Multipart
     where
         R: AsyncRead + Unpin + Send + 'static,
@@ -153,6 +151,10 @@ impl Multipart {
 
     /// Construct a new `Multipart` instance with the given [`AsyncRead`][] reader and the boundary.
     ///
+    /// # Optional
+    ///
+    /// This requires the optional `tokio-io` feature to be enabled.
+    ///
     /// # Examples
     ///
     /// ```
@@ -173,6 +175,7 @@ impl Multipart {
     /// ```
     ///
     /// [`AsyncRead`]: https://docs.rs/futures-io/0.3.7/futures_io/trait.AsyncRead.html
+    #[cfg(feature = "tokio-io")]
     pub fn with_reader_with_constraints<R, B>(reader: R, boundary: B, constraints: Constraints) -> Multipart
     where
         R: AsyncRead + Unpin + Send + 'static,
@@ -197,11 +200,14 @@ impl Multipart {
     ///
     /// ```
     /// use multer::Multipart;
+    /// use futures::stream::once;
+    /// use bytes::Bytes;
+    /// use std::convert::Infallible;
     ///
     /// # async fn run() {
     /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
-    /// let reader = data.as_bytes();
-    /// let mut multipart = Multipart::with_reader(reader, "X-BOUNDARY");
+    /// let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
+    /// let mut multipart = Multipart::new(stream, "X-BOUNDARY");
     ///
     /// while let Some((idx, field)) = multipart.next_field_with_idx().await.unwrap() {
     ///     println!("Index: {:?}, Content: {:?}", idx, field.text().await)
