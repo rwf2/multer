@@ -7,9 +7,7 @@ type BoxError = Box<dyn std::error::Error + Send + Sync>;
 #[derive(Display)]
 #[non_exhaustive]
 pub enum Error {
-    /// An unknown field is detected when multipart
-    /// [`constraints`](./struct.Constraints.html#method.allowed_fields) are
-    /// added.
+    /// An unknown field is detected when multipart [`constraints`](crate::Constraints::allowed_fields) are added.
     #[display(fmt = "unknown field received: {}", "field_name.as_deref().unwrap_or(\"<unknown>\")")]
     UnknownField { field_name: Option<String> },
 
@@ -28,15 +26,11 @@ pub enum Error {
     #[display(fmt = "failed to read headers: {}", _0)]
     ReadHeaderFailed(httparse::Error),
 
-    /// Failed to decode the field's raw header name to
-    /// [`HeaderName`](https://docs.rs/http/0.2.1/http/header/struct.HeaderName.html)
-    /// type.
+    /// Failed to decode the field's raw header name to [`HeaderName`](http::header::HeaderName) type.
     #[display(fmt = "failed to decode field's raw header name: {:?} {}", name, cause)]
     DecodeHeaderName { name: String, cause: BoxError },
 
-    /// Failed to decode the field's raw header value to
-    /// [`HeaderValue`](https://docs.rs/http/0.2.1/http/header/struct.HeaderValue.html)
-    /// type.
+    /// Failed to decode the field's raw header value to [`HeaderValue`](http::header::HeaderValue) type.
     #[display(fmt = "failed to decode field's raw header value: {}", cause)]
     DecodeHeaderValue { value: Vec<u8>, cause: BoxError },
 
@@ -68,8 +62,7 @@ pub enum Error {
     #[display(fmt = "Content-Type is not multipart/form-data")]
     NoMultipart,
 
-    /// Failed to convert the `Content-Type` to
-    /// [`mime::Mime`](https://docs.rs/mime/0.3.16/mime/struct.Mime.html) type.
+    /// Failed to convert the `Content-Type` to [`mime::Mime`] type.
     #[display(fmt = "Failed to convert Content-Type to `mime::Mime` type: {}", _0)]
     DecodeContentType(mime::FromStrError),
 
@@ -77,8 +70,7 @@ pub enum Error {
     #[display(fmt = "multipart boundary not found in Content-Type")]
     NoBoundary,
 
-    /// Failed to decode the field data as `JSON` in
-    /// [`field.json()`](./struct.Field.html#method.json) method.
+    /// Failed to decode the field data as `JSON` in [`field.json()`](crate::Field::json) method.
     #[cfg(feature = "json")]
     #[cfg_attr(nightly, doc(cfg(feature = "json")))]
     #[display(fmt = "failed to decode field data as JSON: {}", _0)]

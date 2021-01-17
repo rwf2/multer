@@ -16,14 +16,16 @@ use {tokio::io::AsyncRead, tokio_util::io::ReaderStream};
 
 /// Represents the implementation of `multipart/form-data` formatted data.
 ///
-/// This will parse the source stream into [`Field`](./struct.Field.html) instances via its [`Stream`]
-/// implementation.
+/// This will parse the source stream into [`Field`] instances via its
+/// [`Stream`] implementation.
 ///
-/// To maintain consistency in the underlying stream, this will not yield more than one [`Field`](./struct.Field.html) at a time.
-/// A [`Drop`](https://doc.rust-lang.org/nightly/std/ops/trait.Drop.html) implementation on [`Field`](./struct.Field.html) is used to signal
-/// when it's time to move forward, so do avoid leaking that type or anything which contains it.
+/// To maintain consistency in the underlying stream, this will not yield more
+/// than one [`Field`] at a time. A [`Drop`] implementation on [`Field`] is used
+/// to signal when it's time to move forward, so do avoid leaking that type or
+/// anything which contains it.
 ///
-/// The Fields can be accessed via the [`Stream`](./struct.Multipart.html#impl-Stream) API or the methods defined in this type.
+/// The Fields can be accessed via the [`Stream`] API or the methods defined in
+/// this type.
 ///
 /// # Examples
 ///
@@ -51,7 +53,7 @@ pub struct Multipart {
 }
 
 impl Multipart {
-    /// Construct a new `Multipart` instance with the given [`Bytes`](https://docs.rs/bytes/0.5.4/bytes/struct.Bytes.html) stream and the boundary.
+    /// Construct a new `Multipart` instance with the given [`Bytes`] stream and the boundary.
     pub fn new<S, O, E, B>(stream: S, boundary: B) -> Multipart
     where
         S: Stream<Item = Result<O, E>> + Send + 'static,
@@ -83,7 +85,7 @@ impl Multipart {
         }
     }
 
-    /// Construct a new `Multipart` instance with the given [`Bytes`](https://docs.rs/bytes/0.5.4/bytes/struct.Bytes.html) stream and the boundary.
+    /// Construct a new `Multipart` instance with the given [`Bytes`] stream and the boundary.
     pub fn new_with_constraints<S, O, E, B>(stream: S, boundary: B, constraints: Constraints) -> Multipart
     where
         S: Stream<Item = Result<O, E>> + Send + 'static,
@@ -113,7 +115,7 @@ impl Multipart {
         }
     }
 
-    /// Construct a new `Multipart` instance with the given [`AsyncRead`][] reader and the boundary.
+    /// Construct a new `Multipart` instance with the given [`AsyncRead`] reader and the boundary.
     ///
     /// # Optional
     ///
@@ -137,8 +139,6 @@ impl Multipart {
     /// # }
     /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
     /// ```
-    ///
-    /// [`AsyncRead`]: https://docs.rs/futures-io/0.3.7/futures_io/trait.AsyncRead.html
     #[cfg(feature = "tokio-io")]
     #[cfg_attr(nightly, doc(cfg(feature = "tokio-io")))]
     pub fn with_reader<R, B>(reader: R, boundary: B) -> Multipart
@@ -150,7 +150,7 @@ impl Multipart {
         Multipart::new(stream, boundary)
     }
 
-    /// Construct a new `Multipart` instance with the given [`AsyncRead`][] reader and the boundary.
+    /// Construct a new `Multipart` instance with the given [`AsyncRead`] reader and the boundary.
     ///
     /// # Optional
     ///
@@ -174,8 +174,6 @@ impl Multipart {
     /// # }
     /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
     /// ```
-    ///
-    /// [`AsyncRead`]: https://docs.rs/futures-io/0.3.7/futures_io/trait.AsyncRead.html
     #[cfg(feature = "tokio-io")]
     #[cfg_attr(nightly, doc(cfg(feature = "tokio-io")))]
     pub fn with_reader_with_constraints<R, B>(reader: R, boundary: B, constraints: Constraints) -> Multipart
@@ -187,14 +185,14 @@ impl Multipart {
         Multipart::new_with_constraints(stream, boundary, constraints)
     }
 
-    /// Yields the next [`Field`](./struct.Field.html) if available.
+    /// Yields the next [`Field`] if available.
     ///
     /// For more info, go to [`Field`](./struct.Field.html#warning-about-leaks).
     pub async fn next_field(&mut self) -> crate::Result<Option<Field>> {
         self.try_next().await
     }
 
-    /// Yields the next [`Field`](./struct.Field.html) with their positioning index as a tuple `(usize, Field)`.
+    /// Yields the next [`Field`] with their positioning index as a tuple `(`[`usize`]`, `[`Field`]`)`.
     ///
     /// For more info, go to [`Field`](./struct.Field.html#warning-about-leaks).
     ///

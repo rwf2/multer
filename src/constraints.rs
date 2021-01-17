@@ -62,7 +62,7 @@ impl Constraints {
         }
     }
 
-    /// Specify which fields should be allowed, for any unknown field, the [`next_field`](./struct.Multipart.html#method.next_field) will throw an error.
+    /// Specify which fields should be allowed, for any unknown field, the [`next_field`](crate::Multipart::next_field) will throw an error.
     pub fn allowed_fields<N: Into<String>>(self, allowed_fields: Vec<N>) -> Constraints {
         let allowed_fields = allowed_fields.into_iter().map(|item| item.into()).collect();
 
