@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use futures::stream;
+use futures_util::stream;
 use multer::{Constraints, Multipart, SizeLimit};
 
 #[tokio::test]

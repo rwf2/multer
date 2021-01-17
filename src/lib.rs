@@ -7,11 +7,11 @@
 //!
 //! ```no_run
 //! use bytes::Bytes;
-//! use futures::stream::Stream;
+//! use futures_util::stream::Stream;
 //! // Import multer types.
 //! use multer::Multipart;
 //! use std::convert::Infallible;
-//! use futures::stream::once;
+//! use futures_util::stream::once;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -60,7 +60,7 @@
 //! use multer::{Multipart, Constraints, SizeLimit};
 //! # use bytes::Bytes;
 //! # use std::convert::Infallible;
-//! # use futures::stream::once;
+//! # use futures_util::stream::once;
 //!
 //! # async fn run() {
 //! # let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";

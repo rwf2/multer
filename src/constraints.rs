@@ -12,7 +12,7 @@ use crate::size_limit::SizeLimit;
 /// use multer::{Multipart, Constraints, SizeLimit};
 /// # use bytes::Bytes;
 /// # use std::convert::Infallible;
-/// # use futures::stream::once;
+/// # use futures_util::stream::once;
 ///
 /// # async fn run() {
 /// # let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";

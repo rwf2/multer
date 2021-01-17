@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use futures::stream::Stream;
+use futures_util::stream::Stream;
 // Import multer types.
 use multer::{Constraints, Multipart, SizeLimit};
 use std::convert::Infallible;
@@ -47,7 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 // Generate a byte stream and the boundary from somewhere e.g. server request body.
 async fn get_byte_stream_from_somewhere() -> (impl Stream<Item = Result<Bytes, Infallible>>, &'static str) {
     let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_file_field\"; filename=\"a-text-file.txt\"\r\nContent-Type: text/plain\r\n\r\nHello world\nHello\r\nWorld\rAgain\r\n--X-BOUNDARY--\r\n";
-    let stream = futures::stream::iter(
+    let stream = futures_util::stream::iter(
         data.chars()
             .map(|ch| ch.to_string())
             .map(|part| Ok(Bytes::copy_from_slice(part.as_bytes()))),
