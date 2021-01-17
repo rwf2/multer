@@ -1,0 +1,13 @@
+--X-BOUNDARY
+Content-Disposition: form-data; name="sometext"
+
+some text that you wrote in your html form ...
+--X-BOUNDARY
+Content-Disposition: form-data; name="name_of_post_request" filename="filename.xyz"
+
+content of filename.xyz that you upload in your form with input[type=file]
+--X-BOUNDARY
+Content-Disposition: form-data; name="image" filename="picture_of_sunset.jpg"
+
+content of picture_of_sunset.jpg ...
+--X-BOUNDARY--

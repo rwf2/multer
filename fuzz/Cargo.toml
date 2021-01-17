@@ -1,0 +1,28 @@
+
+[package]
+name = "multer-fuzz"
+version = "0.0.0"
+authors = ["Automatically generated"]
+publish = false
+edition = "2018"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.3"
+futures = "0.3"
+tokio = { version = "1", features = ["rt"] }
+
+[dependencies.multer]
+path = ".."
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_multipart_bytes"
+path = "fuzz_targets/fuzz_multipart_bytes.rs"
+test = false
+doc = false

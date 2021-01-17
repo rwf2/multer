@@ -1,0 +1,26 @@
+--X-BOUNDARY
+Content-Disposition: form-data; name="text1"
+
+text default
+--X-BOUNDARY
+Content-Disposition: form-data; name="text2"
+
+aωb
+--X-BOUNDARY
+Content-Disposition: form-data; name="file1"; filename="a.txt"
+Content-Type: text/plain
+
+Content of a.txt.
+
+--X-BOUNDARY
+Content-Disposition: form-data; name="file2"; filename="a.html"
+Content-Type: text/html
+
+<!DOCTYPE html><title>Content of a.html.</title>
+
+--X-BOUNDARY
+Content-Disposition: form-data; name="file3"; filename="binary"
+Content-Type: application/octet-stream
+
+aωb
+--X-BOUNDARY--
