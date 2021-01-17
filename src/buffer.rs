@@ -1,6 +1,6 @@
 use crate::constants;
 use bytes::{Buf, Bytes, BytesMut};
-use futures::stream::Stream;
+use futures_util::stream::Stream;
 use std::fmt;
 use std::pin::Pin;
 use std::task::{Context, Poll};

@@ -4,7 +4,7 @@ use std::convert::Infallible;
 
 use multer::Multipart;
 use multer::bytes::Bytes;
-use futures::stream::once;
+use futures_util::stream::once;
 use libfuzzer_sys::fuzz_target;
 use tokio::runtime;
 

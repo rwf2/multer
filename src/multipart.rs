@@ -6,7 +6,7 @@ use crate::helpers;
 use crate::state::{MultipartState, StreamingStage};
 use crate::Field;
 use bytes::Bytes;
-use futures::stream::{Stream, TryStreamExt};
+use futures_util::stream::{Stream, TryStreamExt};
 use std::ops::DerefMut;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -16,7 +16,7 @@ use {tokio::io::AsyncRead, tokio_util::io::ReaderStream};
 
 /// Represents the implementation of `multipart/form-data` formatted data.
 ///
-/// This will parse the source stream into [`Field`](./struct.Field.html) instances via its [`Stream`](https://docs.rs/futures/0.3.5/futures/stream/trait.Stream.html)
+/// This will parse the source stream into [`Field`](./struct.Field.html) instances via its [`Stream`]
 /// implementation.
 ///
 /// To maintain consistency in the underlying stream, this will not yield more than one [`Field`](./struct.Field.html) at a time.
@@ -31,7 +31,7 @@ use {tokio::io::AsyncRead, tokio_util::io::ReaderStream};
 /// use multer::Multipart;
 /// use bytes::Bytes;
 /// use std::convert::Infallible;
-/// use futures::stream::once;
+/// use futures_util::stream::once;
 ///
 /// # async fn run() {
 /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
@@ -202,7 +202,7 @@ impl Multipart {
     ///
     /// ```
     /// use multer::Multipart;
-    /// use futures::stream::once;
+    /// use futures_util::stream::once;
     /// use bytes::Bytes;
     /// use std::convert::Infallible;
     ///

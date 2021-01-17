@@ -3,7 +3,7 @@ use crate::helpers;
 use crate::state::{MultipartState, StreamingStage};
 use bytes::{Bytes, BytesMut};
 use encoding_rs::{Encoding, UTF_8};
-use futures::stream::{Stream, TryStreamExt};
+use futures_util::stream::{Stream, TryStreamExt};
 use http::header::HeaderMap;
 #[cfg(feature = "json")]
 use serde::de::DeserializeOwned;
@@ -23,7 +23,7 @@ use std::task::{Context, Poll};
 /// use multer::Multipart;
 /// use bytes::Bytes;
 /// use std::convert::Infallible;
-/// use futures::stream::once;
+/// use futures_util::stream::once;
 ///
 /// # async fn run() {
 /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
@@ -112,7 +112,7 @@ impl Field {
     /// use multer::Multipart;
     /// use bytes::Bytes;
     /// use std::convert::Infallible;
-    /// use futures::stream::once;
+    /// use futures_util::stream::once;
     ///
     /// # async fn run() {
     /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
@@ -147,7 +147,7 @@ impl Field {
     /// use multer::Multipart;
     /// use bytes::Bytes;
     /// use std::convert::Infallible;
-    /// use futures::stream::once;
+    /// use futures_util::stream::once;
     ///
     /// # async fn run() {
     /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
@@ -178,7 +178,7 @@ impl Field {
     /// use multer::Multipart;
     /// use bytes::Bytes;
     /// use std::convert::Infallible;
-    /// use futures::stream::once;
+    /// use futures_util::stream::once;
     /// use serde::Deserialize;
     ///
     /// // This `derive` requires the `serde` dependency.
@@ -222,7 +222,7 @@ impl Field {
     /// use multer::Multipart;
     /// use bytes::Bytes;
     /// use std::convert::Infallible;
-    /// use futures::stream::once;
+    /// use futures_util::stream::once;
     ///
     /// # async fn run() {
     /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
@@ -252,7 +252,7 @@ impl Field {
     /// use multer::Multipart;
     /// use bytes::Bytes;
     /// use std::convert::Infallible;
-    /// use futures::stream::once;
+    /// use futures_util::stream::once;
     ///
     /// # async fn run() {
     /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
@@ -293,7 +293,7 @@ impl Field {
     /// use multer::Multipart;
     /// use bytes::Bytes;
     /// use std::convert::Infallible;
-    /// use futures::stream::once;
+    /// use futures_util::stream::once;
     ///
     /// # async fn run() {
     /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
