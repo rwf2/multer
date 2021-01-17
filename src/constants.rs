@@ -1,4 +1,4 @@
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use regex::bytes::Regex;
 
 pub(crate) const DEFAULT_WHOLE_STREAM_SIZE_LIMIT: u64 = std::u64::MAX;
@@ -12,10 +12,10 @@ pub(crate) const LF: &str = "\n";
 pub(crate) const CRLF: &str = "\r\n";
 pub(crate) const CRLF_CRLF: &str = "\r\n\r\n";
 
-lazy_static! {
-    pub(crate) static ref CONTENT_DISPOSITION_FIELD_NAME_RE: Regex = Regex::new(r#"(?-u)name="([^"]+)""#).unwrap();
-    pub(crate) static ref CONTENT_DISPOSITION_FILE_NAME_RE: Regex = Regex::new(r#"(?-u)filename="([^"]+)""#).unwrap();
-}
+pub(crate) static CONTENT_DISPOSITION_FIELD_NAME_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"(?-u)name="([^"]+)""#).unwrap());
+pub(crate) static CONTENT_DISPOSITION_FILE_NAME_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"(?-u)filename="([^"]+)""#).unwrap());
 
 #[cfg(test)]
 mod tests {
