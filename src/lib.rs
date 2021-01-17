@@ -1,7 +1,7 @@
 //! An async parser for `multipart/form-data` content-type in Rust.
 //!
-//! It accepts a [`Stream`](https://docs.rs/futures/0.3.5/futures/stream/trait.Stream.html) of [`Bytes`](https://docs.rs/bytes/0.5.4/bytes/struct.Bytes.html) as
-//! a source, so that It can be plugged into any async Rust environment e.g. any async server.
+//! It accepts a [`Stream`](futures::Stream) of [`Bytes`](bytes::Bytes) as a source, so
+//! that it can be plugged into any async Rust environment e.g. any async server.
 //!
 //! # Examples
 //!
@@ -91,7 +91,7 @@
 //! # tokio::runtime::Runtime::new().unwrap().block_on(run());
 //! ```
 //!
-//! Please refer [`Constraints`](./struct.Constraints.html) for more info.
+//! Please refer [`Constraints`] for more info.
 //!
 //! ## Usage with [hyper.rs](https://hyper.rs/) server
 //!

@@ -15,7 +15,7 @@ use std::task::{Context, Poll};
 
 /// A single field in a multipart stream.
 ///
-/// Its content can be accessed via the [`Stream`](./struct.Field.html#impl-Stream) API or the methods defined in this type.
+/// Its content can be accessed via the [`Stream`] API or the methods defined in this type.
 ///
 /// # Examples
 ///
@@ -40,14 +40,16 @@ use std::task::{Context, Poll};
 ///
 /// ## Warning About Leaks
 ///
-/// To avoid the next field being initialized before this one is done being read or dropped, only one instance per [`Multipart`](./struct.Multipart.html)
-/// instance is allowed at a time. A [`Drop`](https://doc.rust-lang.org/nightly/std/ops/trait.Drop.html) implementation is used to
-/// notify [`Multipart`](./struct.Multipart.html) that this field is done being read.
+/// To avoid the next field being initialized before this one is done being read or dropped, only one instance per [`Multipart`]
+/// instance is allowed at a time. A [`Drop`] implementation is used to
+/// notify [`Multipart`] that this field is done being read.
 ///
-/// If this value is leaked (via [`std::mem::forget()`](https://doc.rust-lang.org/nightly/std/mem/fn.forget.html) or some other mechanism),
-/// then the parent [`Multipart`](./struct.Multipart.html) will never be able to yield the next field in the stream.
-/// The task waiting on the [`Multipart`](./struct.Multipart.html) will also never be notified, which, depending on the executor implementation,
+/// If this value is leaked (via [`std::mem::forget()`] or some other mechanism),
+/// then the parent [`Multipart`] will never be able to yield the next field in the stream.
+/// The task waiting on the [`Multipart`] will also never be notified, which, depending on the executor implementation,
 /// may cause a deadlock.
+///
+/// [`Multipart`]: crate::Multipart
 #[derive(Debug)]
 pub struct Field {
     state: Arc<Mutex<MultipartState>>,
@@ -99,12 +101,12 @@ impl Field {
         self.meta.content_type.as_ref()
     }
 
-    /// Get a map of headers as [`HeaderMap`](https://docs.rs/http/0.2.1/http/header/struct.HeaderMap.html).
+    /// Get a map of headers as [`HeaderMap`].
     pub fn headers(&self) -> &HeaderMap {
         &self.headers
     }
 
-    /// Get the full data of the field as [`Bytes`](https://docs.rs/bytes/0.5.4/bytes/struct.Bytes.html).
+    /// Get the full data of the field as [`Bytes`].
     ///
     /// # Examples
     ///
@@ -139,7 +141,7 @@ impl Field {
 
     /// Stream a chunk of the field data.
     ///
-    /// When the field data has been exhausted, this will return None.
+    /// When the field data has been exhausted, this will return [`None`].
     ///
     /// # Examples
     ///
@@ -204,7 +206,7 @@ impl Field {
     ///
     /// This method fails if the field data is not in JSON format
     /// or it cannot be properly deserialized to target type `T`. For more
-    /// details please see [`serde_json::from_slice`](https://docs.serde.rs/serde_json/fn.from_slice.html);
+    /// details please see [`serde_json::from_slice`].
     #[cfg(feature = "json")]
     #[cfg_attr(nightly, doc(cfg(feature = "json")))]
     pub async fn json<T: DeserializeOwned>(self) -> crate::Result<T> {
@@ -244,7 +246,7 @@ impl Field {
     ///
     /// This method decodes the field data with `BOM sniffing` and with malformed sequences replaced with the `REPLACEMENT CHARACTER`.
     /// You can provide a default encoding for decoding the raw message, while the `charset` parameter of `Content-Type` header is still prioritized.
-    /// For more information about the possible encoding name, please go to [encoding_rs](https://docs.rs/encoding_rs/0.8.22/encoding_rs/) docs.
+    /// For more information about the possible encoding name, please go to [encoding_rs] docs.
     ///
     /// # Examples
     ///
