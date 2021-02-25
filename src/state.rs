@@ -20,6 +20,8 @@ pub(crate) enum StreamingStage {
     CleaningPrevFieldData,
     FindingFirstBoundary,
     ReadingBoundary,
+    DeterminingBoundaryType,
+    ReadingTransportPadding,
     ReadingFieldHeaders,
     ReadingFieldData,
     Eof,

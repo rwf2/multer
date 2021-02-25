@@ -64,6 +64,34 @@ async fn test_multipart_clean_field() {
 }
 
 #[tokio::test]
+async fn test_multipart_transport_padding() {
+    let data = "--X-BOUNDARY \t \r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY     \r\nContent-Disposition: form-data; name=\"my_file_field\"; filename=\"a-text-file.txt\"\r\nContent-Type: text/plain\r\n\r\nHello world\nHello\r\nWorld\rAgain\r\n--X-BOUNDARY--\t\t\t\t\t\r\n";
+    let stream = stream::iter(
+        data.chars()
+            .map(|ch| ch.to_string())
+            .map(|part| multer::Result::Ok(Bytes::copy_from_slice(part.as_bytes()))),
+    );
+
+    let mut m = Multipart::new(stream, "X-BOUNDARY");
+
+    assert!(m.next_field().await.unwrap().is_some());
+    assert!(m.next_field().await.unwrap().is_some());
+    assert!(m.next_field().await.unwrap().is_none());
+
+    let bad_data = "--X-BOUNDARY \t \r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARYzz     \r\nContent-Disposition: form-data; name=\"my_file_field\"; filename=\"a-text-file.txt\"\r\nContent-Type: text/plain\r\n\r\nHello world\nHello\r\nWorld\rAgain\r\n--X-BOUNDARY--\t\t\t\t\t\r\n";
+    let bad_stream = stream::iter(
+        bad_data
+            .chars()
+            .map(|ch| ch.to_string())
+            .map(|part| multer::Result::Ok(Bytes::copy_from_slice(part.as_bytes()))),
+    );
+
+    let mut m = Multipart::new(bad_stream, "X-BOUNDARY");
+    assert!(m.next_field().await.unwrap().is_some());
+    assert!(m.next_field().await.is_err());
+}
+
+#[tokio::test]
 async fn test_multipart_header() {
     let should_pass = [
         "ignored header\r\n--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n",

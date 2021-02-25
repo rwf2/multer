@@ -65,12 +65,29 @@ impl StreamBuffer {
         }
     }
 
+    pub fn peek_exact(&mut self, size: usize) -> Option<&[u8]> {
+        self.buf.get(..size)
+    }
+
     pub fn read_until(&mut self, pattern: &[u8]) -> Option<Bytes> {
         twoway::find_bytes(&self.buf, pattern).map(|idx| self.buf.split_to(idx + pattern.len()).freeze())
     }
 
     pub fn read_to(&mut self, pattern: &[u8]) -> Option<Bytes> {
         twoway::find_bytes(&self.buf, pattern).map(|idx| self.buf.split_to(idx).freeze())
+    }
+
+    pub fn advance_past_transport_padding(&mut self) -> bool {
+        match self.buf.iter().position(|b| *b != b' ' && *b != b'\t') {
+            Some(pos) => {
+                self.buf.advance(pos);
+                true
+            }
+            None => {
+                self.buf.clear();
+                false
+            }
+        }
     }
 
     pub fn read_field_data(
