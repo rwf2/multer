@@ -1,5 +1,5 @@
 use crate::constants;
-use bytes::{Bytes, BytesMut};
+use bytes::{Buf, Bytes, BytesMut};
 use futures::stream::Stream;
 use std::fmt;
 use std::pin::Pin;
@@ -76,14 +76,14 @@ impl StreamBuffer {
         boundary: &str,
         field_name: Option<&str>,
     ) -> crate::Result<Option<(bool, Bytes)>> {
-        if self.buf.is_empty() {
-            return if self.eof {
-                Err(crate::Error::IncompleteFieldData {
-                    field_name: field_name.map(|s| s.to_owned()),
-                })
-            } else {
-                Ok(None)
-            };
+        log::trace!("finding next field: {:?}", field_name);
+        if self.buf.is_empty() && self.eof {
+            log::trace!("empty buffer && EOF");
+            return Err(crate::Error::IncompleteFieldData {
+                field_name: field_name.map(|s| s.to_owned()),
+            })
+        } else if self.buf.is_empty() {
+            return Ok(None)
         }
 
         let boundary_deriv = format!("{}{}{}", constants::CRLF, constants::BOUNDARY_EXT, boundary);
@@ -91,25 +91,32 @@ impl StreamBuffer {
 
         match twoway::find_bytes(&self.buf, boundary_deriv.as_bytes()) {
             Some(idx) => {
+                log::trace!("new field found at {}", idx);
                 let bytes = self.buf.split_to(idx).freeze();
 
                 // discard \r\n.
-                drop(self.buf.split_to(2).freeze());
+                self.buf.advance(constants::CRLF.len());
 
                 Ok(Some((true, bytes)))
+            }
+            None if self.eof => {
+                log::trace!("no new field found: EOF. terminating");
+                Err(crate::Error::IncompleteFieldData {
+                    field_name: field_name.map(|s| s.to_owned()),
+                })
             }
             None => {
                 let buf_len = self.buf.len();
                 let rem_boundary_part_max_len = b_len - 1;
-                let rem_boundary_part_idx;
-
-                if buf_len >= rem_boundary_part_max_len {
-                    rem_boundary_part_idx = buf_len - rem_boundary_part_max_len
+                let rem_boundary_part_idx = if buf_len >= rem_boundary_part_max_len {
+                    buf_len - rem_boundary_part_max_len
                 } else {
-                    rem_boundary_part_idx = 0
-                }
+                    0
+                };
 
-                match twoway::rfind_bytes(&self.buf[rem_boundary_part_idx..], constants::CR.as_bytes()) {
+                log::trace!("no new field found, not EOF, checking close");
+                let bytes = &self.buf[rem_boundary_part_idx..];
+                match twoway::rfind_bytes(bytes, constants::CR.as_bytes()) {
                     Some(rel_idx) => {
                         let idx = rel_idx + rem_boundary_part_idx;
 
@@ -117,36 +124,16 @@ impl StreamBuffer {
                             Some(_) => {
                                 let bytes = self.buf.split_to(idx).freeze();
 
-                                if self.eof {
-                                    Err(crate::Error::IncompleteFieldData {
-                                        field_name: field_name.map(|s| s.to_owned()),
-                                    })
-                                } else if bytes.is_empty() {
-                                    Ok(None)
-                                } else {
-                                    Ok(Some((false, bytes)))
+                                match bytes.is_empty() {
+                                    true => Ok(None),
+                                    false => Ok(Some((false, bytes))),
                                 }
                             }
-                            None => {
-                                if self.eof {
-                                    Err(crate::Error::IncompleteFieldData {
-                                        field_name: field_name.map(|s| s.to_owned()),
-                                    })
-                                } else {
-                                    Ok(Some((false, self.read_full_buf())))
-                                }
-                            }
+                            None => Ok(Some((false, self.read_full_buf()))),
+
                         }
                     }
-                    None => {
-                        if self.eof {
-                            Err(crate::Error::IncompleteFieldData {
-                                field_name: field_name.map(|s| s.to_owned()),
-                            })
-                        } else {
-                            Ok(Some((false, self.read_full_buf())))
-                        }
-                    }
+                    None => Ok(Some((false, self.read_full_buf()))),
                 }
             }
         }

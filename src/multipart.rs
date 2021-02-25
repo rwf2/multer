@@ -232,6 +232,7 @@ impl Stream for Multipart {
         };
 
         let state: &mut MultipartState = mutex_guard.deref_mut();
+        log::trace!("parser state: {:?}", state);
 
         if state.stage == StreamingStage::Eof {
             return Poll::Ready(None);
@@ -347,7 +348,7 @@ impl Stream for Multipart {
                     return Poll::Ready(Some(Err(crate::Error::IncompleteHeaders)));
                 }
                 Err(err) => {
-                    return Poll::Ready(Some(Err(crate::Error::ReadHeaderFailed(err.into()))));
+                    return Poll::Ready(Some(Err(crate::Error::ReadHeaderFailed(err))));
                 }
             };
 

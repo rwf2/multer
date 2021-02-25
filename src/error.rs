@@ -5,79 +5,86 @@ type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 /// A set of errors that can occur during parsing multipart stream and in other operations.
 #[derive(Display)]
-#[display(fmt = "multer: {}")]
 #[non_exhaustive]
 pub enum Error {
-    /// An unknown field is detected when multipart [`constraints`](./struct.Constraints.html#method.allowed_fields) are added.
+    /// An unknown field is detected when multipart
+    /// [`constraints`](./struct.Constraints.html#method.allowed_fields) are
+    /// added.
     #[display(
-        fmt = "An unknown field is detected: {}",
+        fmt = "unknown field received: {}",
         "field_name.as_deref().unwrap_or(\"<unknown>\")"
     )]
     UnknownField { field_name: Option<String> },
 
     /// The field data is found incomplete.
     #[display(
-        fmt = "Incomplete field data for field: {}",
+        fmt = "field '{}' received with incomplete data",
         "field_name.as_deref().unwrap_or(\"<unknown>\")"
     )]
     IncompleteFieldData { field_name: Option<String> },
 
     /// Couldn't read the field headers completely.
-    #[display(fmt = "Incomplete headers, couldn't read the field headers completely")]
+    #[display(fmt = "failed to read field complete headers")]
     IncompleteHeaders,
 
     /// Failed to read headers.
-    #[display(fmt = "Failed to read headers: {}", _0)]
-    ReadHeaderFailed(BoxError),
+    #[display(fmt = "failed to read headers: {}", _0)]
+    ReadHeaderFailed(httparse::Error),
 
-    /// Failed to decode the field's raw header name to [`HeaderName`](https://docs.rs/http/0.2.1/http/header/struct.HeaderName.html) type.
-    #[display(fmt = "Failed to decode the field's raw header name: {}", cause)]
+    /// Failed to decode the field's raw header name to
+    /// [`HeaderName`](https://docs.rs/http/0.2.1/http/header/struct.HeaderName.html)
+    /// type.
+    #[display(fmt = "failed to decode field's raw header name: {:?} {}", name, cause)]
     DecodeHeaderName { name: String, cause: BoxError },
 
-    /// Failed to decode the field's raw header value to [`HeaderValue`](https://docs.rs/http/0.2.1/http/header/struct.HeaderValue.html) type.
-    #[display(fmt = "Failed to decode the field's raw header value: {}", cause)]
+    /// Failed to decode the field's raw header value to
+    /// [`HeaderValue`](https://docs.rs/http/0.2.1/http/header/struct.HeaderValue.html)
+    /// type.
+    #[display(fmt = "failed to decode field's raw header value: {}", cause)]
     DecodeHeaderValue { value: Vec<u8>, cause: BoxError },
 
     /// Multipart stream is incomplete.
-    #[display(fmt = "Multipart stream is incomplete")]
+    #[display(fmt = "incomplete multipart stream")]
     IncompleteStream,
 
     /// The incoming field size exceeded the maximum limit.
     #[display(
-        fmt = "Incoming field size exceeded the maximum limit: {} bytes, field name: {}",
+        fmt = "field '{}' exceeded the maximum size limit: {} bytes",
+        "field_name.as_deref().unwrap_or(\"<unknown>\")",
         limit,
-        "field_name.as_deref().unwrap_or(\"<unknown>\")"
     )]
     FieldSizeExceeded { limit: u64, field_name: Option<String> },
 
     /// The incoming stream size exceeded the maximum limit.
-    #[display(fmt = "Stream size exceeded the maximum limit: {} bytes", limit)]
+    #[display(fmt = "stream size exceeded the maximum limit: {} bytes", limit)]
     StreamSizeExceeded { limit: u64 },
 
     /// Stream read failed.
-    #[display(fmt = "Stream read failed: {}", _0)]
+    #[display(fmt = "stream read failed: {}", _0)]
     StreamReadFailed(BoxError),
 
     /// Failed to lock the multipart shared state for any changes.
-    #[display(fmt = "Couldn't lock the multipart state: {}", _0)]
+    #[display(fmt = "failed to lock multipart state: {}", _0)]
     LockFailure(BoxError),
 
     /// The `Content-Type` header is not `multipart/form-data`.
-    #[display(fmt = "The Content-Type is not multipart/form-data")]
+    #[display(fmt = "Content-Type is not multipart/form-data")]
     NoMultipart,
 
-    /// Failed to convert the `Content-Type` to [`mime::Mime`](https://docs.rs/mime/0.3.16/mime/struct.Mime.html) type.
-    #[display(fmt = "Failed to convert the Content-Type to `mime::Mime` type: {}", _0)]
-    DecodeContentType(BoxError),
+    /// Failed to convert the `Content-Type` to
+    /// [`mime::Mime`](https://docs.rs/mime/0.3.16/mime/struct.Mime.html) type.
+    #[display(fmt = "Failed to convert Content-Type to `mime::Mime` type: {}", _0)]
+    DecodeContentType(mime::FromStrError),
 
     /// No boundary found in `Content-Type` header.
-    #[display(fmt = "No boundary found in Content-Type header")]
+    #[display(fmt = "multipart boundary not found in Content-Type")]
     NoBoundary,
 
-    /// Failed to decode the field data as `JSON` in [`field.json()`](./struct.Field.html#method.json) method.
+    /// Failed to decode the field data as `JSON` in
+    /// [`field.json()`](./struct.Field.html#method.json) method.
     #[cfg(feature = "json")]
-    #[display(fmt = "Failed to decode the field data as JSON: {}", _0)]
-    DecodeJson(BoxError),
+    #[display(fmt = "failed to decode field data as JSON: {}", _0)]
+    DecodeJson(serde_json::Error),
 }
 
 impl Debug for Error {
