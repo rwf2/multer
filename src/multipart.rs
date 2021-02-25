@@ -307,7 +307,7 @@ impl Stream for Multipart {
 
         if state.stage == StreamingStage::ReadingBoundary {
             let boundary = &state.boundary;
-            let boundary_deriv_len = constants::BOUNDARY_EXT.len() + boundary.len() + 2;
+            let boundary_deriv_len = constants::BOUNDARY_EXT.len() + boundary.len();
 
             let boundary_bytes = match stream_buffer.read_exact(boundary_deriv_len) {
                 Some(bytes) => bytes,
@@ -320,17 +320,59 @@ impl Stream for Multipart {
                 }
             };
 
-            if &boundary_bytes[..]
-                == format!("{}{}{}", constants::BOUNDARY_EXT, boundary, constants::BOUNDARY_EXT).as_bytes()
-            {
+            if &boundary_bytes[..] == format!("{}{}", constants::BOUNDARY_EXT, boundary).as_bytes() {
+                state.stage = StreamingStage::DeterminingBoundaryType;
+            } else {
+                return Poll::Ready(Some(Err(crate::Error::IncompleteStream)));
+            }
+        }
+
+        if state.stage == StreamingStage::DeterminingBoundaryType {
+            let ext_len = constants::BOUNDARY_EXT.len();
+            let next_bytes = match stream_buffer.peek_exact(ext_len) {
+                Some(bytes) => bytes,
+                None => {
+                    return if stream_buffer.eof {
+                        Poll::Ready(Some(Err(crate::Error::IncompleteStream)))
+                    } else {
+                        Poll::Pending
+                    };
+                }
+            };
+
+            if next_bytes == constants::BOUNDARY_EXT.as_bytes() {
                 state.stage = StreamingStage::Eof;
                 return Poll::Ready(None);
+            } else {
+                state.stage = StreamingStage::ReadingTransportPadding;
+            }
+        }
+
+        if state.stage == StreamingStage::ReadingTransportPadding {
+            if !stream_buffer.advance_past_transport_padding() {
+                return if stream_buffer.eof {
+                    Poll::Ready(Some(Err(crate::Error::IncompleteStream)))
+                } else {
+                    Poll::Pending
+                };
             }
 
-            if &boundary_bytes[..] != format!("{}{}{}", constants::BOUNDARY_EXT, boundary, constants::CRLF).as_bytes() {
-                return Poll::Ready(Some(Err(crate::Error::IncompleteStream)));
-            } else {
+            let crlf_len = constants::CRLF.len();
+            let crlf_bytes = match stream_buffer.read_exact(crlf_len) {
+                Some(bytes) => bytes,
+                None => {
+                    return if stream_buffer.eof {
+                        Poll::Ready(Some(Err(crate::Error::IncompleteStream)))
+                    } else {
+                        Poll::Pending
+                    };
+                }
+            };
+
+            if &crlf_bytes[..] == constants::CRLF.as_bytes() {
                 state.stage = StreamingStage::ReadingFieldHeaders;
+            } else {
+                return Poll::Ready(Some(Err(crate::Error::IncompleteStream)));
             }
         }
 
