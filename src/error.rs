@@ -10,10 +10,7 @@ pub enum Error {
     /// An unknown field is detected when multipart
     /// [`constraints`](./struct.Constraints.html#method.allowed_fields) are
     /// added.
-    #[display(
-        fmt = "unknown field received: {}",
-        "field_name.as_deref().unwrap_or(\"<unknown>\")"
-    )]
+    #[display(fmt = "unknown field received: {}", "field_name.as_deref().unwrap_or(\"<unknown>\")")]
     UnknownField { field_name: Option<String> },
 
     /// The field data is found incomplete.
@@ -51,7 +48,7 @@ pub enum Error {
     #[display(
         fmt = "field '{}' exceeded the maximum size limit: {} bytes",
         "field_name.as_deref().unwrap_or(\"<unknown>\")",
-        limit,
+        limit
     )]
     FieldSizeExceeded { limit: u64, field_name: Option<String> },
 

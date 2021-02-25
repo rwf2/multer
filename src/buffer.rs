@@ -81,9 +81,9 @@ impl StreamBuffer {
             log::trace!("empty buffer && EOF");
             return Err(crate::Error::IncompleteFieldData {
                 field_name: field_name.map(|s| s.to_owned()),
-            })
+            });
         } else if self.buf.is_empty() {
-            return Ok(None)
+            return Ok(None);
         }
 
         let boundary_deriv = format!("{}{}{}", constants::CRLF, constants::BOUNDARY_EXT, boundary);
@@ -130,7 +130,6 @@ impl StreamBuffer {
                                 }
                             }
                             None => Ok(Some((false, self.read_full_buf()))),
-
                         }
                     }
                     None => Ok(Some((false, self.read_full_buf()))),

@@ -143,7 +143,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// # run();
 /// ```
 pub fn parse_boundary<T: AsRef<str>>(content_type: T) -> Result<String> {
-    let m = content_type.as_ref()
+    let m = content_type
+        .as_ref()
         .parse::<mime::Mime>()
         .map_err(crate::Error::DecodeContentType)?;
 
