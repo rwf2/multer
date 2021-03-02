@@ -140,6 +140,7 @@ impl Multipart {
     ///
     /// [`AsyncRead`]: https://docs.rs/futures-io/0.3.7/futures_io/trait.AsyncRead.html
     #[cfg(feature = "tokio-io")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "tokio-io")))]
     pub fn with_reader<R, B>(reader: R, boundary: B) -> Multipart
     where
         R: AsyncRead + Unpin + Send + 'static,
@@ -176,6 +177,7 @@ impl Multipart {
     ///
     /// [`AsyncRead`]: https://docs.rs/futures-io/0.3.7/futures_io/trait.AsyncRead.html
     #[cfg(feature = "tokio-io")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "tokio-io")))]
     pub fn with_reader_with_constraints<R, B>(reader: R, boundary: B, constraints: Constraints) -> Multipart
     where
         R: AsyncRead + Unpin + Send + 'static,
