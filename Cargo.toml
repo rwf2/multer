@@ -26,7 +26,7 @@ tokio-io = ["tokio", "tokio-util"]
 [dependencies]
 log = "0.4"
 bytes = "1.0"
-futures = "0.3"
+futures = { version = "0.3", default-features = false }
 twoway = "0.2"
 http = "0.2"
 httparse = "1.3"
