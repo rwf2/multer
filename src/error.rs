@@ -80,7 +80,7 @@ pub enum Error {
     /// Failed to decode the field data as `JSON` in
     /// [`field.json()`](./struct.Field.html#method.json) method.
     #[cfg(feature = "json")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "json")))]
+    #[cfg_attr(nightly, doc(cfg(feature = "json")))]
     #[display(fmt = "failed to decode field data as JSON: {}", _0)]
     DecodeJson(serde_json::Error),
 }
