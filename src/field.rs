@@ -1,32 +1,37 @@
-use crate::content_disposition::ContentDisposition;
-use crate::helpers;
-use crate::state::{MultipartState, StreamingStage};
-use bytes::{Bytes, BytesMut};
-use encoding_rs::{Encoding, UTF_8};
-use futures_util::stream::{Stream, TryStreamExt};
-use http::header::HeaderMap;
-#[cfg(feature = "json")]
-use serde::de::DeserializeOwned;
 use std::borrow::Cow;
 use std::ops::DerefMut;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
+use bytes::{Bytes, BytesMut};
+use encoding_rs::{Encoding, UTF_8};
+use futures_util::stream::{Stream, TryStreamExt};
+use http::header::HeaderMap;
+#[cfg(feature = "json")]
+use serde::de::DeserializeOwned;
+
+use crate::content_disposition::ContentDisposition;
+use crate::helpers;
+use crate::state::{MultipartState, StreamingStage};
+
 /// A single field in a multipart stream.
 ///
-/// Its content can be accessed via the [`Stream`] API or the methods defined in this type.
+/// Its content can be accessed via the [`Stream`] API or the methods defined in
+/// this type.
 ///
 /// # Examples
 ///
 /// ```
-/// use multer::Multipart;
-/// use bytes::Bytes;
 /// use std::convert::Infallible;
+///
+/// use bytes::Bytes;
 /// use futures_util::stream::once;
+/// use multer::Multipart;
 ///
 /// # async fn run() {
-/// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+/// let data =
+///     "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
 /// let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
 /// let mut multipart = Multipart::new(stream, "X-BOUNDARY");
 ///
@@ -40,13 +45,15 @@ use std::task::{Context, Poll};
 ///
 /// ## Warning About Leaks
 ///
-/// To avoid the next field being initialized before this one is done being read or dropped, only one instance per [`Multipart`]
-/// instance is allowed at a time. A [`Drop`] implementation is used to
-/// notify [`Multipart`] that this field is done being read.
+/// To avoid the next field being initialized before this one is done being read
+/// or dropped, only one instance per [`Multipart`] instance is allowed at a
+/// time. A [`Drop`] implementation is used to notify [`Multipart`] that this
+/// field is done being read.
 ///
-/// If this value is leaked (via [`std::mem::forget()`] or some other mechanism),
-/// then the parent [`Multipart`] will never be able to yield the next field in the stream.
-/// The task waiting on the [`Multipart`] will also never be notified, which, depending on the executor implementation,
+/// If this value is leaked (via [`std::mem::forget()`] or some other
+/// mechanism), then the parent [`Multipart`] will never be able to yield the
+/// next field in the stream. The task waiting on the [`Multipart`] will also
+/// never be notified, which, depending on the executor implementation,
 /// may cause a deadlock.
 ///
 /// [`Multipart`]: crate::Multipart
@@ -111,13 +118,15 @@ impl Field {
     /// # Examples
     ///
     /// ```
-    /// use multer::Multipart;
-    /// use bytes::Bytes;
     /// use std::convert::Infallible;
+    ///
+    /// use bytes::Bytes;
     /// use futures_util::stream::once;
+    /// use multer::Multipart;
     ///
     /// # async fn run() {
-    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+    /// let data =
+    ///     "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
     /// let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
     /// let mut multipart = Multipart::new(stream, "X-BOUNDARY");
     ///
@@ -146,13 +155,15 @@ impl Field {
     /// # Examples
     ///
     /// ```
-    /// use multer::Multipart;
-    /// use bytes::Bytes;
     /// use std::convert::Infallible;
+    ///
+    /// use bytes::Bytes;
     /// use futures_util::stream::once;
+    /// use multer::Multipart;
     ///
     /// # async fn run() {
-    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+    /// let data =
+    ///     "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
     /// let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
     /// let mut multipart = Multipart::new(stream, "X-BOUNDARY");
     ///
@@ -215,25 +226,29 @@ impl Field {
 
     /// Get the full field data as text.
     ///
-    /// This method decodes the field data with `BOM sniffing` and with malformed sequences replaced with the `REPLACEMENT CHARACTER`.
-    /// Encoding is determined from the `charset` parameter of `Content-Type` header, and defaults to `utf-8` if not presented.
+    /// This method decodes the field data with `BOM sniffing` and with
+    /// malformed sequences replaced with the `REPLACEMENT CHARACTER`.
+    /// Encoding is determined from the `charset` parameter of `Content-Type`
+    /// header, and defaults to `utf-8` if not presented.
     ///
     /// # Examples
     ///
     /// ```
-    /// use multer::Multipart;
-    /// use bytes::Bytes;
     /// use std::convert::Infallible;
+    ///
+    /// use bytes::Bytes;
     /// use futures_util::stream::once;
+    /// use multer::Multipart;
     ///
     /// # async fn run() {
-    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+    /// let data =
+    ///     "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
     /// let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
     /// let mut multipart = Multipart::new(stream, "X-BOUNDARY");
     ///
     /// while let Some(field) = multipart.next_field().await.unwrap() {
-    ///    let content = field.text().await.unwrap();
-    ///    assert_eq!(content, "abcd");
+    ///     let content = field.text().await.unwrap();
+    ///     assert_eq!(content, "abcd");
     /// }
     /// # }
     /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
@@ -244,26 +259,31 @@ impl Field {
 
     /// Get the full field data as text given a specific encoding.
     ///
-    /// This method decodes the field data with `BOM sniffing` and with malformed sequences replaced with the `REPLACEMENT CHARACTER`.
-    /// You can provide a default encoding for decoding the raw message, while the `charset` parameter of `Content-Type` header is still prioritized.
-    /// For more information about the possible encoding name, please go to [encoding_rs] docs.
+    /// This method decodes the field data with `BOM sniffing` and with
+    /// malformed sequences replaced with the `REPLACEMENT CHARACTER`.
+    /// You can provide a default encoding for decoding the raw message, while
+    /// the `charset` parameter of `Content-Type` header is still prioritized.
+    /// For more information about the possible encoding name, please go to
+    /// [encoding_rs] docs.
     ///
     /// # Examples
     ///
     /// ```
-    /// use multer::Multipart;
-    /// use bytes::Bytes;
     /// use std::convert::Infallible;
+    ///
+    /// use bytes::Bytes;
     /// use futures_util::stream::once;
+    /// use multer::Multipart;
     ///
     /// # async fn run() {
-    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+    /// let data =
+    ///     "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
     /// let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
     /// let mut multipart = Multipart::new(stream, "X-BOUNDARY");
     ///
     /// while let Some(field) = multipart.next_field().await.unwrap() {
-    ///    let content = field.text_with_charset("utf-8").await.unwrap();
-    ///    assert_eq!(content, "abcd");
+    ///     let content = field.text_with_charset("utf-8").await.unwrap();
+    ///     assert_eq!(content, "abcd");
     /// }
     /// # }
     /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
@@ -279,7 +299,7 @@ impl Field {
 
         let bytes = self.bytes().await?;
 
-        let (text, _, _) = encoding.decode(&bytes);
+        let (text, ..) = encoding.decode(&bytes);
 
         match text {
             Cow::Owned(s) => Ok(s),
@@ -292,13 +312,15 @@ impl Field {
     /// # Examples
     ///
     /// ```
-    /// use multer::Multipart;
-    /// use bytes::Bytes;
     /// use std::convert::Infallible;
+    ///
+    /// use bytes::Bytes;
     /// use futures_util::stream::once;
+    /// use multer::Multipart;
     ///
     /// # async fn run() {
-    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+    /// let data =
+    ///     "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
     /// let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
     /// let mut multipart = Multipart::new(stream, "X-BOUNDARY");
     ///

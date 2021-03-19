@@ -1,6 +1,7 @@
+use std::convert::TryFrom;
+
 use http::header::{self, HeaderMap, HeaderName, HeaderValue};
 use httparse::Header;
-use std::convert::TryFrom;
 
 pub(crate) fn convert_raw_headers_to_header_map(raw_headers: &[Header<'_>]) -> crate::Result<HeaderMap> {
     let mut headers = HeaderMap::with_capacity(raw_headers.len());

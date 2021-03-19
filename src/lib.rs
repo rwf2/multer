@@ -1,17 +1,19 @@
 //! An async parser for `multipart/form-data` content-type in Rust.
 //!
-//! It accepts a [`Stream`](futures::Stream) of [`Bytes`](bytes::Bytes) as a source, so
-//! that it can be plugged into any async Rust environment e.g. any async server.
+//! It accepts a [`Stream`](futures::Stream) of [`Bytes`](bytes::Bytes) as a
+//! source, so that it can be plugged into any async Rust environment e.g. any
+//! async server.
 //!
 //! # Examples
 //!
 //! ```no_run
-//! use bytes::Bytes;
-//! use futures_util::stream::Stream;
-//! // Import multer types.
-//! use multer::Multipart;
 //! use std::convert::Infallible;
+//!
+//! use bytes::Bytes;
+//! // Import multer types.
 //! use futures_util::stream::once;
+//! use futures_util::stream::Stream;
+//! use multer::Multipart;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -42,17 +44,20 @@
 //!
 //! // Generate a byte stream and the boundary from somewhere e.g. server request body.
 //! async fn get_byte_stream_from_somewhere() -> (impl Stream<Item = Result<Bytes, Infallible>>, &'static str) {
-//!     let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+//!     let data =
+//!         "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
 //!     let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
-//!     
+//!
 //!     (stream, "X-BOUNDARY")
 //! }
 //! ```
 //!
 //! ## Prevent Denial of Service (DoS) Attack
 //!
-//! This crate also provides some APIs to prevent potential DoS attacks with fine grained control. It's recommended to add some constraints
-//! on field (specially text field) size to avoid potential DoS attacks from attackers running the server out of memory.
+//! This crate also provides some APIs to prevent potential DoS attacks with
+//! fine grained control. It's recommended to add some constraints
+//! on field (specially text field) size to avoid potential DoS attacks from
+//! attackers running the server out of memory.
 //!
 //! An example:
 //!

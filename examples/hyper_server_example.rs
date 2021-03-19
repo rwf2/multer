@@ -1,9 +1,10 @@
+use std::{convert::Infallible, net::SocketAddr};
+
 use hyper::server::Server;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{header::CONTENT_TYPE, Body, Request, Response, StatusCode};
 // Import the multer types.
 use multer::Multipart;
-use std::{convert::Infallible, net::SocketAddr};
 
 // A handler for incoming requests.
 async fn handle(req: Request<Body>) -> Result<Response<Body>, Infallible> {
@@ -38,7 +39,8 @@ async fn process_multipart(body: Body, boundary: String) -> multer::Result<()> {
     // Create a Multipart instance from the request body.
     let mut multipart = Multipart::new(body, boundary);
 
-    // Iterate over the fields, `next_field` method will return the next field if available.
+    // Iterate over the fields, `next_field` method will return the next field if
+    // available.
     while let Some(mut field) = multipart.next_field().await? {
         // Get the field name.
         let name = field.name();

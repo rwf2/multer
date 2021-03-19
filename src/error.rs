@@ -1,13 +1,16 @@
-use derive_more::Display;
 use std::fmt::{self, Debug, Display, Formatter};
+
+use derive_more::Display;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
-/// A set of errors that can occur during parsing multipart stream and in other operations.
+/// A set of errors that can occur during parsing multipart stream and in other
+/// operations.
 #[derive(Display)]
 #[non_exhaustive]
 pub enum Error {
-    /// An unknown field is detected when multipart [`constraints`](crate::Constraints::allowed_fields) are added.
+    /// An unknown field is detected when multipart
+    /// [`constraints`](crate::Constraints::allowed_fields) are added.
     #[display(fmt = "unknown field received: {}", "field_name.as_deref().unwrap_or(\"<unknown>\")")]
     UnknownField { field_name: Option<String> },
 
@@ -26,11 +29,13 @@ pub enum Error {
     #[display(fmt = "failed to read headers: {}", _0)]
     ReadHeaderFailed(httparse::Error),
 
-    /// Failed to decode the field's raw header name to [`HeaderName`](http::header::HeaderName) type.
+    /// Failed to decode the field's raw header name to
+    /// [`HeaderName`](http::header::HeaderName) type.
     #[display(fmt = "failed to decode field's raw header name: {:?} {}", name, cause)]
     DecodeHeaderName { name: String, cause: BoxError },
 
-    /// Failed to decode the field's raw header value to [`HeaderValue`](http::header::HeaderValue) type.
+    /// Failed to decode the field's raw header value to
+    /// [`HeaderValue`](http::header::HeaderValue) type.
     #[display(fmt = "failed to decode field's raw header value: {}", cause)]
     DecodeHeaderValue { value: Vec<u8>, cause: BoxError },
 
@@ -70,7 +75,8 @@ pub enum Error {
     #[display(fmt = "multipart boundary not found in Content-Type")]
     NoBoundary,
 
-    /// Failed to decode the field data as `JSON` in [`field.json()`](crate::Field::json) method.
+    /// Failed to decode the field data as `JSON` in
+    /// [`field.json()`](crate::Field::json) method.
     #[cfg(feature = "json")]
     #[cfg_attr(nightly, doc(cfg(feature = "json")))]
     #[display(fmt = "failed to decode field data as JSON: {}", _0)]

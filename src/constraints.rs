@@ -1,10 +1,13 @@
 use crate::size_limit::SizeLimit;
 
-/// Represents some rules to be applied on the stream and field's content size to prevent DoS attacks.
+/// Represents some rules to be applied on the stream and field's content size
+/// to prevent DoS attacks.
 ///
-/// It's recommended to add some rules on field (specially text field) size to avoid potential DoS attacks from attackers running the server out of memory.
-/// This type provides some API to apply constraints on very granular level to make `multipart/form-data` safe.
-/// By default, it does not apply any constraint.
+/// It's recommended to add some rules on field (specially text field) size to
+/// avoid potential DoS attacks from attackers running the server out of memory.
+/// This type provides some API to apply constraints on very granular level to
+/// make `multipart/form-data` safe. By default, it does not apply any
+/// constraint.
 ///
 /// # Examples
 ///
@@ -62,7 +65,8 @@ impl Constraints {
         }
     }
 
-    /// Specify which fields should be allowed, for any unknown field, the [`next_field`](crate::Multipart::next_field) will throw an error.
+    /// Specify which fields should be allowed, for any unknown field, the
+    /// [`next_field`](crate::Multipart::next_field) will throw an error.
     pub fn allowed_fields<N: Into<String>>(self, allowed_fields: Vec<N>) -> Constraints {
         let allowed_fields = allowed_fields.into_iter().map(|item| item.into()).collect();
 

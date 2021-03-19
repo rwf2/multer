@@ -1,5 +1,6 @@
-use crate::constants;
 use http::header::{self, HeaderMap};
+
+use crate::constants;
 
 #[derive(Debug)]
 pub(crate) struct ContentDisposition {

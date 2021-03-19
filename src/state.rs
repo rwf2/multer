@@ -1,5 +1,6 @@
-use crate::buffer::StreamBuffer;
 use std::task::Waker;
+
+use crate::buffer::StreamBuffer;
 
 #[derive(Debug)]
 pub(crate) struct MultipartState {

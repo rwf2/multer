@@ -1,3 +1,13 @@
+use std::ops::DerefMut;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll};
+
+use bytes::Bytes;
+use futures_util::stream::{Stream, TryStreamExt};
+#[cfg(feature = "tokio-io")]
+use {tokio::io::AsyncRead, tokio_util::io::ReaderStream};
+
 use crate::buffer::StreamBuffer;
 use crate::constants;
 use crate::constraints::Constraints;
@@ -5,14 +15,6 @@ use crate::content_disposition::ContentDisposition;
 use crate::helpers;
 use crate::state::{MultipartState, StreamingStage};
 use crate::Field;
-use bytes::Bytes;
-use futures_util::stream::{Stream, TryStreamExt};
-use std::ops::DerefMut;
-use std::pin::Pin;
-use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll};
-#[cfg(feature = "tokio-io")]
-use {tokio::io::AsyncRead, tokio_util::io::ReaderStream};
 
 /// Represents the implementation of `multipart/form-data` formatted data.
 ///
@@ -30,13 +32,15 @@ use {tokio::io::AsyncRead, tokio_util::io::ReaderStream};
 /// # Examples
 ///
 /// ```
-/// use multer::Multipart;
-/// use bytes::Bytes;
 /// use std::convert::Infallible;
+///
+/// use bytes::Bytes;
 /// use futures_util::stream::once;
+/// use multer::Multipart;
 ///
 /// # async fn run() {
-/// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+/// let data =
+///     "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
 /// let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
 /// let mut multipart = Multipart::new(stream, "X-BOUNDARY");
 ///
@@ -53,7 +57,8 @@ pub struct Multipart {
 }
 
 impl Multipart {
-    /// Construct a new `Multipart` instance with the given [`Bytes`] stream and the boundary.
+    /// Construct a new `Multipart` instance with the given [`Bytes`] stream and
+    /// the boundary.
     pub fn new<S, O, E, B>(stream: S, boundary: B) -> Multipart
     where
         S: Stream<Item = Result<O, E>> + Send + 'static,
@@ -85,7 +90,8 @@ impl Multipart {
         }
     }
 
-    /// Construct a new `Multipart` instance with the given [`Bytes`] stream and the boundary.
+    /// Construct a new `Multipart` instance with the given [`Bytes`] stream and
+    /// the boundary.
     pub fn new_with_constraints<S, O, E, B>(stream: S, boundary: B, constraints: Constraints) -> Multipart
     where
         S: Stream<Item = Result<O, E>> + Send + 'static,
@@ -115,7 +121,8 @@ impl Multipart {
         }
     }
 
-    /// Construct a new `Multipart` instance with the given [`AsyncRead`] reader and the boundary.
+    /// Construct a new `Multipart` instance with the given [`AsyncRead`] reader
+    /// and the boundary.
     ///
     /// # Optional
     ///
@@ -127,7 +134,8 @@ impl Multipart {
     /// use multer::Multipart;
     ///
     /// # async fn run() {
-    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+    /// let data =
+    ///     "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
     /// let reader = data.as_bytes();
     /// let mut multipart = Multipart::with_reader(reader, "X-BOUNDARY");
     ///
@@ -150,7 +158,8 @@ impl Multipart {
         Multipart::new(stream, boundary)
     }
 
-    /// Construct a new `Multipart` instance with the given [`AsyncRead`] reader and the boundary.
+    /// Construct a new `Multipart` instance with the given [`AsyncRead`] reader
+    /// and the boundary.
     ///
     /// # Optional
     ///
@@ -162,7 +171,8 @@ impl Multipart {
     /// use multer::Multipart;
     ///
     /// # async fn run() {
-    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+    /// let data =
+    ///     "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
     /// let reader = data.as_bytes();
     /// let mut multipart = Multipart::with_reader(reader, "X-BOUNDARY");
     ///
@@ -192,20 +202,23 @@ impl Multipart {
         self.try_next().await
     }
 
-    /// Yields the next [`Field`] with their positioning index as a tuple `(`[`usize`]`, `[`Field`]`)`.
+    /// Yields the next [`Field`] with their positioning index as a tuple
+    /// `(`[`usize`]`, `[`Field`]`)`.
     ///
     /// For more info, go to [`Field`](./struct.Field.html#warning-about-leaks).
     ///
     /// # Examples
     ///
     /// ```
-    /// use multer::Multipart;
-    /// use futures_util::stream::once;
-    /// use bytes::Bytes;
     /// use std::convert::Infallible;
     ///
+    /// use bytes::Bytes;
+    /// use futures_util::stream::once;
+    /// use multer::Multipart;
+    ///
     /// # async fn run() {
-    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+    /// let data =
+    ///     "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
     /// let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
     /// let mut multipart = Multipart::new(stream, "X-BOUNDARY");
     ///

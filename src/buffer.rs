@@ -1,9 +1,11 @@
-use crate::constants;
-use bytes::{Buf, Bytes, BytesMut};
-use futures_util::stream::Stream;
 use std::fmt;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+
+use bytes::{Buf, Bytes, BytesMut};
+use futures_util::stream::Stream;
+
+use crate::constants;
 
 pub(crate) struct StreamBuffer {
     pub(crate) eof: bool,

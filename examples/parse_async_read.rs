@@ -3,7 +3,8 @@ use tokio::io::AsyncRead;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Generate an `AsyncRead` and the boundary from somewhere e.g. server request body.
+    // Generate an `AsyncRead` and the boundary from somewhere e.g. server request
+    // body.
     let (reader, boundary) = get_async_reader_from_somewhere().await;
 
     // Create a `Multipart` instance from that async reader and the boundary.
@@ -31,7 +32,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-// Generate an `AsyncRead` and the boundary from somewhere e.g. server request body.
+// Generate an `AsyncRead` and the boundary from somewhere e.g. server request
+// body.
 async fn get_async_reader_from_somewhere() -> (impl AsyncRead, &'static str) {
     let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_file_field\"; filename=\"a-text-file.txt\"\r\nContent-Type: text/plain\r\n\r\nHello world\nHello\r\nWorld\rAgain\r\n--X-BOUNDARY--\r\n";
 
