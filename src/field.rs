@@ -1,7 +1,5 @@
 use std::borrow::Cow;
-use std::ops::DerefMut;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
 use bytes::{Bytes, BytesMut};
@@ -43,74 +41,68 @@ use crate::state::{MultipartState, StreamingStage};
 /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
 /// ```
 ///
-/// ## Warning About Leaks
-///
-/// To avoid the next field being initialized before this one is done being read
-/// or dropped, only one instance per [`Multipart`] instance is allowed at a
-/// time. A [`Drop`] implementation is used to notify [`Multipart`] that this
-/// field is done being read.
-///
-/// If this value is leaked (via [`std::mem::forget()`] or some other
-/// mechanism), then the parent [`Multipart`] will never be able to yield the
-/// next field in the stream. The task waiting on the [`Multipart`] will also
-/// never be notified, which, depending on the executor implementation,
-/// may cause a deadlock.
-///
 /// [`Multipart`]: crate::Multipart
 #[derive(Debug)]
-pub struct Field {
-    state: Arc<Mutex<MultipartState>>,
-    headers: HeaderMap,
+pub struct Field<'a> {
+    state: &'a mut MultipartState,
     done: bool,
-    meta: FieldMeta,
+    data: FieldData,
 }
 
+/// Owned field data. This is used by `Multipart` to extend the lifetime of a
+/// `Field`.
 #[derive(Debug)]
-struct FieldMeta {
+pub(crate) struct FieldData {
+    headers: HeaderMap,
     content_disposition: ContentDisposition,
     content_type: Option<mime::Mime>,
     idx: usize,
 }
 
-impl Field {
-    pub(crate) fn new(
-        state: Arc<Mutex<MultipartState>>,
-        headers: HeaderMap,
-        idx: usize,
-        content_disposition: ContentDisposition,
-    ) -> Self {
+impl FieldData {
+    pub(crate) fn new(headers: HeaderMap, idx: usize, content_disposition: ContentDisposition) -> Self {
         let content_type = helpers::parse_content_type(&headers);
 
-        Field {
-            state,
+        FieldData {
             headers,
+            content_disposition,
+            content_type,
+            idx,
+        }
+    }
+
+    pub(crate) fn name(&self) -> Option<&str> {
+        self.content_disposition.field_name.as_deref()
+    }
+}
+
+impl<'a> Field<'a> {
+    pub(crate) fn from_data(state: &'a mut MultipartState, data: FieldData) -> Self {
+        Self {
+            state,
             done: false,
-            meta: FieldMeta {
-                content_disposition,
-                content_type,
-                idx,
-            },
+            data,
         }
     }
 
     /// The field name found in the [`Content-Disposition`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Disposition) header.
     pub fn name(&self) -> Option<&str> {
-        self.meta.content_disposition.field_name.as_deref()
+        self.data.content_disposition.field_name.as_deref()
     }
 
     /// The file name found in the [`Content-Disposition`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Disposition) header.
     pub fn file_name(&self) -> Option<&str> {
-        self.meta.content_disposition.file_name.as_deref()
+        self.data.content_disposition.file_name.as_deref()
     }
 
     /// Get the content type of the field.
     pub fn content_type(&self) -> Option<&mime::Mime> {
-        self.meta.content_type.as_ref()
+        self.data.content_type.as_ref()
     }
 
     /// Get a map of headers as [`HeaderMap`].
     pub fn headers(&self) -> &HeaderMap {
-        &self.headers
+        &self.data.headers
     }
 
     /// Get the full data of the field as [`Bytes`].
@@ -332,11 +324,11 @@ impl Field {
     /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
     /// ```
     pub fn index(&self) -> usize {
-        self.meta.idx
+        self.data.idx
     }
 }
 
-impl Stream for Field {
+impl Stream for Field<'_> {
     type Item = Result<Bytes, crate::Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -344,69 +336,34 @@ impl Stream for Field {
             return Poll::Ready(None);
         }
 
-        let mut mutex_guard = match self.state.lock() {
-            Ok(lock) => lock,
-            Err(err) => {
-                return Poll::Ready(Some(Err(crate::Error::LockFailure(err.to_string().into()))));
-            }
-        };
+        let state = &mut *self.state;
 
-        let state: &mut MultipartState = mutex_guard.deref_mut();
-
-        let stream_buffer = &mut state.buffer;
-
-        if let Err(err) = stream_buffer.poll_stream(cx) {
+        if let Err(err) = state.buffer.poll_stream(cx) {
             return Poll::Ready(Some(Err(crate::Error::StreamReadFailed(err.into()))));
         }
 
-        match stream_buffer.read_field_data(state.boundary.as_str(), state.curr_field_name.as_deref()) {
+        match state
+            .buffer
+            .read_field_data(state.boundary.as_str(), state.curr_field_name.as_deref())
+        {
             Ok(Some((done, bytes))) => {
-                state.curr_field_size_counter += bytes.len() as u64;
+                self.state.curr_field_size_counter += bytes.len() as u64;
 
-                if state.curr_field_size_counter > state.curr_field_size_limit {
+                if self.state.curr_field_size_counter > self.state.curr_field_size_limit {
                     return Poll::Ready(Some(Err(crate::Error::FieldSizeExceeded {
-                        limit: state.curr_field_size_limit,
-                        field_name: state.curr_field_name.clone(),
+                        limit: self.state.curr_field_size_limit,
+                        field_name: self.state.curr_field_name.clone(),
                     })));
                 }
 
-                drop(mutex_guard);
-
                 if done {
                     self.done = true;
-                    Poll::Ready(Some(Ok(bytes)))
-                } else {
-                    Poll::Ready(Some(Ok(bytes)))
+                    self.state.stage = StreamingStage::ReadingBoundary;
                 }
+                Poll::Ready(Some(Ok(bytes)))
             }
             Ok(None) => Poll::Pending,
             Err(err) => Poll::Ready(Some(Err(err))),
-        }
-    }
-}
-
-impl Drop for Field {
-    fn drop(&mut self) {
-        let mut mutex_guard = match self.state.lock() {
-            Ok(lock) => lock,
-            Err(err) => {
-                log::error!("{}", crate::Error::LockFailure(err.to_string().into()));
-                return;
-            }
-        };
-
-        let state: &mut MultipartState = mutex_guard.deref_mut();
-
-        if self.done {
-            state.stage = StreamingStage::ReadingBoundary;
-        } else {
-            state.stage = StreamingStage::CleaningPrevFieldData;
-        }
-
-        state.is_prev_field_consumed = true;
-
-        if let Some(waker) = state.next_field_waker.take() {
-            waker.wake();
         }
     }
 }

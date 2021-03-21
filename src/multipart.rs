@@ -1,9 +1,7 @@
-use std::ops::DerefMut;
-use std::pin::Pin;
-use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
 use bytes::Bytes;
+use futures_util::future;
 use futures_util::stream::{Stream, TryStreamExt};
 #[cfg(feature = "tokio-io")]
 use {tokio::io::AsyncRead, tokio_util::io::ReaderStream};
@@ -12,22 +10,14 @@ use crate::buffer::StreamBuffer;
 use crate::constants;
 use crate::constraints::Constraints;
 use crate::content_disposition::ContentDisposition;
+use crate::field::{Field, FieldData};
 use crate::helpers;
 use crate::state::{MultipartState, StreamingStage};
-use crate::Field;
 
 /// Represents the implementation of `multipart/form-data` formatted data.
 ///
-/// This will parse the source stream into [`Field`] instances via its
-/// [`Stream`] implementation.
-///
-/// To maintain consistency in the underlying stream, this will not yield more
-/// than one [`Field`] at a time. A [`Drop`] implementation on [`Field`] is used
-/// to signal when it's time to move forward, so do avoid leaking that type or
-/// anything which contains it.
-///
-/// The Fields can be accessed via the [`Stream`] API or the methods defined in
-/// this type.
+/// This will parse the source stream into [`Field`] instances via
+/// [`next_field`](Self::next_field).
 ///
 /// # Examples
 ///
@@ -52,7 +42,7 @@ use crate::Field;
 /// ```
 #[derive(Debug)]
 pub struct Multipart {
-    state: Arc<Mutex<MultipartState>>,
+    state: MultipartState,
     constraints: Constraints,
 }
 
@@ -76,18 +66,13 @@ impl Multipart {
             buffer: StreamBuffer::new(stream, constraints.size_limit.whole_stream),
             boundary: boundary.into(),
             stage: StreamingStage::FindingFirstBoundary,
-            is_prev_field_consumed: true,
-            next_field_waker: None,
             next_field_idx: 0,
             curr_field_name: None,
             curr_field_size_limit: constraints.size_limit.per_field,
             curr_field_size_counter: 0,
         };
 
-        Multipart {
-            state: Arc::new(Mutex::new(state)),
-            constraints,
-        }
+        Multipart { state, constraints }
     }
 
     /// Construct a new `Multipart` instance with the given [`Bytes`] stream and
@@ -107,18 +92,13 @@ impl Multipart {
             buffer: StreamBuffer::new(stream, constraints.size_limit.whole_stream),
             boundary: boundary.into(),
             stage: StreamingStage::FindingFirstBoundary,
-            is_prev_field_consumed: true,
-            next_field_waker: None,
             next_field_idx: 0,
             curr_field_name: None,
             curr_field_size_limit: constraints.size_limit.per_field,
             curr_field_size_counter: 0,
         };
 
-        Multipart {
-            state: Arc::new(Mutex::new(state)),
-            constraints,
-        }
+        Multipart { state, constraints }
     }
 
     /// Construct a new `Multipart` instance with the given [`AsyncRead`] reader
@@ -196,16 +176,194 @@ impl Multipart {
     }
 
     /// Yields the next [`Field`] if available.
-    ///
-    /// For more info, go to [`Field`](./struct.Field.html#warning-about-leaks).
-    pub async fn next_field(&mut self) -> crate::Result<Option<Field>> {
-        self.try_next().await
+    pub async fn next_field(&mut self) -> crate::Result<Option<Field<'_>>> {
+        let data = future::poll_fn(|cx| self.poll_next_field(cx)).await?;
+        Ok(data.map(move |data| Field::from_data(&mut self.state, data)))
+    }
+
+    fn poll_next_field(&mut self, cx: &mut Context<'_>) -> Poll<crate::Result<Option<FieldData>>> {
+        if self.state.stage == StreamingStage::Eof {
+            return Poll::Ready(Ok(None));
+        }
+
+        let stream_buffer = &mut self.state.buffer;
+
+        if let Err(err) = stream_buffer.poll_stream(cx) {
+            return Poll::Ready(Err(crate::Error::StreamReadFailed(err.into())));
+        }
+
+        if self.state.stage == StreamingStage::FindingFirstBoundary {
+            let boundary = &self.state.boundary;
+            let boundary_deriv = format!("{}{}", constants::BOUNDARY_EXT, boundary);
+            match stream_buffer.read_to(boundary_deriv.as_bytes()) {
+                Some(_) => self.state.stage = StreamingStage::ReadingBoundary,
+                None => {
+                    if let Err(err) = stream_buffer.poll_stream(cx) {
+                        return Poll::Ready(Err(crate::Error::StreamReadFailed(err.into())));
+                    }
+                    if stream_buffer.eof {
+                        return Poll::Ready(Err(crate::Error::IncompleteStream));
+                    }
+                }
+            }
+        }
+
+        // The previous field did not finish reading its data.
+        if self.state.stage == StreamingStage::ReadingFieldData {
+            match stream_buffer.read_field_data(self.state.boundary.as_str(), self.state.curr_field_name.as_deref())? {
+                Some((done, bytes)) => {
+                    self.state.curr_field_size_counter += bytes.len() as u64;
+
+                    if self.state.curr_field_size_counter > self.state.curr_field_size_limit {
+                        return Poll::Ready(Err(crate::Error::FieldSizeExceeded {
+                            limit: self.state.curr_field_size_limit,
+                            field_name: self.state.curr_field_name.clone(),
+                        }));
+                    }
+
+                    if done {
+                        self.state.stage = StreamingStage::ReadingBoundary;
+                    } else {
+                        return Poll::Pending;
+                    }
+                }
+                None => {
+                    return Poll::Pending;
+                }
+            }
+        }
+
+        if self.state.stage == StreamingStage::ReadingBoundary {
+            let boundary = &self.state.boundary;
+            let boundary_deriv_len = constants::BOUNDARY_EXT.len() + boundary.len();
+
+            let boundary_bytes = match stream_buffer.read_exact(boundary_deriv_len) {
+                Some(bytes) => bytes,
+                None => {
+                    return if stream_buffer.eof {
+                        Poll::Ready(Err(crate::Error::IncompleteStream))
+                    } else {
+                        Poll::Pending
+                    };
+                }
+            };
+
+            if &boundary_bytes[..] == format!("{}{}", constants::BOUNDARY_EXT, boundary).as_bytes() {
+                self.state.stage = StreamingStage::DeterminingBoundaryType;
+            } else {
+                return Poll::Ready(Err(crate::Error::IncompleteStream));
+            }
+        }
+
+        if self.state.stage == StreamingStage::DeterminingBoundaryType {
+            let ext_len = constants::BOUNDARY_EXT.len();
+            let next_bytes = match stream_buffer.peek_exact(ext_len) {
+                Some(bytes) => bytes,
+                None => {
+                    return if stream_buffer.eof {
+                        Poll::Ready(Err(crate::Error::IncompleteStream))
+                    } else {
+                        Poll::Pending
+                    };
+                }
+            };
+
+            if next_bytes == constants::BOUNDARY_EXT.as_bytes() {
+                self.state.stage = StreamingStage::Eof;
+                return Poll::Ready(Ok(None));
+            } else {
+                self.state.stage = StreamingStage::ReadingTransportPadding;
+            }
+        }
+
+        if self.state.stage == StreamingStage::ReadingTransportPadding {
+            if !stream_buffer.advance_past_transport_padding() {
+                return if stream_buffer.eof {
+                    Poll::Ready(Err(crate::Error::IncompleteStream))
+                } else {
+                    Poll::Pending
+                };
+            }
+
+            let crlf_len = constants::CRLF.len();
+            let crlf_bytes = match stream_buffer.read_exact(crlf_len) {
+                Some(bytes) => bytes,
+                None => {
+                    return if stream_buffer.eof {
+                        Poll::Ready(Err(crate::Error::IncompleteStream))
+                    } else {
+                        Poll::Pending
+                    };
+                }
+            };
+
+            if &crlf_bytes[..] == constants::CRLF.as_bytes() {
+                self.state.stage = StreamingStage::ReadingFieldHeaders;
+            } else {
+                return Poll::Ready(Err(crate::Error::IncompleteStream));
+            }
+        }
+
+        if self.state.stage == StreamingStage::ReadingFieldHeaders {
+            let header_bytes = match stream_buffer.read_until(constants::CRLF_CRLF.as_bytes()) {
+                Some(bytes) => bytes,
+                None => {
+                    return if stream_buffer.eof {
+                        return Poll::Ready(Err(crate::Error::IncompleteStream));
+                    } else {
+                        Poll::Pending
+                    };
+                }
+            };
+
+            let mut headers = [httparse::EMPTY_HEADER; constants::MAX_HEADERS];
+
+            let headers =
+                match httparse::parse_headers(&header_bytes, &mut headers).map_err(crate::Error::ReadHeaderFailed)? {
+                    httparse::Status::Complete((_, raw_headers)) => {
+                        match helpers::convert_raw_headers_to_header_map(raw_headers) {
+                            Ok(headers) => headers,
+                            Err(err) => {
+                                return Poll::Ready(Err(err));
+                            }
+                        }
+                    }
+                    httparse::Status::Partial => {
+                        return Poll::Ready(Err(crate::Error::IncompleteHeaders));
+                    }
+                };
+
+            self.state.stage = StreamingStage::ReadingFieldData;
+
+            let field_idx = self.state.next_field_idx;
+            self.state.next_field_idx += 1;
+
+            let content_disposition = ContentDisposition::parse(&headers);
+            let field_size_limit = self
+                .constraints
+                .size_limit
+                .extract_size_limit_for(content_disposition.field_name.as_deref());
+
+            self.state.curr_field_name = content_disposition.field_name.clone();
+            self.state.curr_field_size_limit = field_size_limit;
+            self.state.curr_field_size_counter = 0;
+
+            let next_field = FieldData::new(headers, field_idx, content_disposition);
+
+            if !self.constraints.is_it_allowed(next_field.name()) {
+                return Poll::Ready(Err(crate::Error::UnknownField {
+                    field_name: next_field.name().map(str::to_owned),
+                }));
+            }
+
+            return Poll::Ready(Ok(Some(next_field)));
+        }
+
+        Poll::Pending
     }
 
     /// Yields the next [`Field`] with their positioning index as a tuple
     /// `(`[`usize`]`, `[`Field`]`)`.
-    ///
-    /// For more info, go to [`Field`](./struct.Field.html#warning-about-leaks).
     ///
     /// # Examples
     ///
@@ -228,214 +386,7 @@ impl Multipart {
     /// # }
     /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
     /// ```
-    pub async fn next_field_with_idx(&mut self) -> crate::Result<Option<(usize, Field)>> {
-        self.try_next().await.map(|f| f.map(|field| (field.index(), field)))
-    }
-}
-
-impl Stream for Multipart {
-    type Item = Result<Field, crate::Error>;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let mut mutex_guard = match self.state.lock() {
-            Ok(lock) => lock,
-            Err(err) => {
-                return Poll::Ready(Some(Err(crate::Error::LockFailure(err.to_string().into()))));
-            }
-        };
-
-        let state: &mut MultipartState = mutex_guard.deref_mut();
-        log::trace!("parser state: {:?}", state);
-
-        if state.stage == StreamingStage::Eof {
-            return Poll::Ready(None);
-        }
-
-        if !state.is_prev_field_consumed {
-            state.next_field_waker = Some(cx.waker().clone());
-            return Poll::Pending;
-        }
-
-        let stream_buffer = &mut state.buffer;
-
-        if let Err(err) = stream_buffer.poll_stream(cx) {
-            return Poll::Ready(Some(Err(crate::Error::StreamReadFailed(err.into()))));
-        }
-
-        if state.stage == StreamingStage::FindingFirstBoundary {
-            let boundary = &state.boundary;
-            let boundary_deriv = format!("{}{}", constants::BOUNDARY_EXT, boundary);
-            match stream_buffer.read_to(boundary_deriv.as_bytes()) {
-                Some(_) => state.stage = StreamingStage::ReadingBoundary,
-                None => {
-                    if let Err(err) = stream_buffer.poll_stream(cx) {
-                        return Poll::Ready(Some(Err(crate::Error::StreamReadFailed(err.into()))));
-                    }
-                    if stream_buffer.eof {
-                        return Poll::Ready(Some(Err(crate::Error::IncompleteStream)));
-                    }
-                }
-            }
-        }
-
-        if state.stage == StreamingStage::CleaningPrevFieldData {
-            match stream_buffer.read_field_data(state.boundary.as_str(), state.curr_field_name.as_deref()) {
-                Ok(Some((done, bytes))) => {
-                    state.curr_field_size_counter += bytes.len() as u64;
-
-                    if state.curr_field_size_counter > state.curr_field_size_limit {
-                        return Poll::Ready(Some(Err(crate::Error::FieldSizeExceeded {
-                            limit: state.curr_field_size_limit,
-                            field_name: state.curr_field_name.clone(),
-                        })));
-                    }
-
-                    if done {
-                        state.stage = StreamingStage::ReadingBoundary;
-                    } else {
-                        return Poll::Pending;
-                    }
-                }
-                Ok(None) => {
-                    return Poll::Pending;
-                }
-                Err(err) => {
-                    return Poll::Ready(Some(Err(err)));
-                }
-            }
-        }
-
-        if state.stage == StreamingStage::ReadingBoundary {
-            let boundary = &state.boundary;
-            let boundary_deriv_len = constants::BOUNDARY_EXT.len() + boundary.len();
-
-            let boundary_bytes = match stream_buffer.read_exact(boundary_deriv_len) {
-                Some(bytes) => bytes,
-                None => {
-                    return if stream_buffer.eof {
-                        Poll::Ready(Some(Err(crate::Error::IncompleteStream)))
-                    } else {
-                        Poll::Pending
-                    };
-                }
-            };
-
-            if &boundary_bytes[..] == format!("{}{}", constants::BOUNDARY_EXT, boundary).as_bytes() {
-                state.stage = StreamingStage::DeterminingBoundaryType;
-            } else {
-                return Poll::Ready(Some(Err(crate::Error::IncompleteStream)));
-            }
-        }
-
-        if state.stage == StreamingStage::DeterminingBoundaryType {
-            let ext_len = constants::BOUNDARY_EXT.len();
-            let next_bytes = match stream_buffer.peek_exact(ext_len) {
-                Some(bytes) => bytes,
-                None => {
-                    return if stream_buffer.eof {
-                        Poll::Ready(Some(Err(crate::Error::IncompleteStream)))
-                    } else {
-                        Poll::Pending
-                    };
-                }
-            };
-
-            if next_bytes == constants::BOUNDARY_EXT.as_bytes() {
-                state.stage = StreamingStage::Eof;
-                return Poll::Ready(None);
-            } else {
-                state.stage = StreamingStage::ReadingTransportPadding;
-            }
-        }
-
-        if state.stage == StreamingStage::ReadingTransportPadding {
-            if !stream_buffer.advance_past_transport_padding() {
-                return if stream_buffer.eof {
-                    Poll::Ready(Some(Err(crate::Error::IncompleteStream)))
-                } else {
-                    Poll::Pending
-                };
-            }
-
-            let crlf_len = constants::CRLF.len();
-            let crlf_bytes = match stream_buffer.read_exact(crlf_len) {
-                Some(bytes) => bytes,
-                None => {
-                    return if stream_buffer.eof {
-                        Poll::Ready(Some(Err(crate::Error::IncompleteStream)))
-                    } else {
-                        Poll::Pending
-                    };
-                }
-            };
-
-            if &crlf_bytes[..] == constants::CRLF.as_bytes() {
-                state.stage = StreamingStage::ReadingFieldHeaders;
-            } else {
-                return Poll::Ready(Some(Err(crate::Error::IncompleteStream)));
-            }
-        }
-
-        if state.stage == StreamingStage::ReadingFieldHeaders {
-            let header_bytes = match stream_buffer.read_until(constants::CRLF_CRLF.as_bytes()) {
-                Some(bytes) => bytes,
-                None => {
-                    return if stream_buffer.eof {
-                        return Poll::Ready(Some(Err(crate::Error::IncompleteStream)));
-                    } else {
-                        Poll::Pending
-                    };
-                }
-            };
-
-            let mut headers = [httparse::EMPTY_HEADER; constants::MAX_HEADERS];
-
-            let headers = match httparse::parse_headers(&header_bytes, &mut headers) {
-                Ok(httparse::Status::Complete((_, raw_headers))) => {
-                    match helpers::convert_raw_headers_to_header_map(raw_headers) {
-                        Ok(headers) => headers,
-                        Err(err) => {
-                            return Poll::Ready(Some(Err(err)));
-                        }
-                    }
-                }
-                Ok(httparse::Status::Partial) => {
-                    return Poll::Ready(Some(Err(crate::Error::IncompleteHeaders)));
-                }
-                Err(err) => {
-                    return Poll::Ready(Some(Err(crate::Error::ReadHeaderFailed(err))));
-                }
-            };
-
-            state.stage = StreamingStage::ReadingFieldData;
-            state.is_prev_field_consumed = false;
-
-            let field_idx = state.next_field_idx;
-            state.next_field_idx += 1;
-
-            let content_disposition = ContentDisposition::parse(&headers);
-            let field_size_limit = self
-                .constraints
-                .size_limit
-                .extract_size_limit_for(content_disposition.field_name.as_deref());
-
-            state.curr_field_name = content_disposition.field_name.clone();
-            state.curr_field_size_limit = field_size_limit;
-            state.curr_field_size_counter = 0;
-
-            drop(mutex_guard);
-
-            let next_field = Field::new(Arc::clone(&self.state), headers, field_idx, content_disposition);
-            let field_name = next_field.name().map(|name| name.to_owned());
-
-            if !self.constraints.is_it_allowed(field_name.as_deref()) {
-                return Poll::Ready(Some(Err(crate::Error::UnknownField { field_name })));
-            }
-
-            return Poll::Ready(Some(Ok(next_field)));
-        }
-
-        state.next_field_waker = Some(cx.waker().clone());
-        Poll::Pending
+    pub async fn next_field_with_idx(&mut self) -> crate::Result<Option<(usize, Field<'_>)>> {
+        self.next_field().await.map(|f| f.map(|field| (field.index(), field)))
     }
 }
