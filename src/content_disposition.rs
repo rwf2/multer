@@ -1,6 +1,6 @@
 use http::header::{self, HeaderMap};
 
-use crate::constants;
+use crate::constants::ContentDispositionAttr;
 
 #[derive(Debug)]
 pub(crate) struct ContentDisposition {
@@ -13,16 +13,14 @@ impl ContentDisposition {
         let content_disposition = headers.get(header::CONTENT_DISPOSITION).map(|val| val.as_bytes());
 
         let field_name = content_disposition
-            .and_then(|val| constants::CONTENT_DISPOSITION_FIELD_NAME_RE.captures(val))
-            .and_then(|cap| cap.get(1))
-            .map(|m| m.as_bytes().to_vec())
-            .and_then(|bytes| String::from_utf8(bytes).ok());
+            .and_then(|val| ContentDispositionAttr::Name.extract_from(val))
+            .and_then(|attr| std::str::from_utf8(attr).ok())
+            .map(String::from);
 
         let file_name = content_disposition
-            .and_then(|val| constants::CONTENT_DISPOSITION_FILE_NAME_RE.captures(val))
-            .and_then(|cap| cap.get(1))
-            .map(|m| m.as_bytes().to_vec())
-            .and_then(|bytes| String::from_utf8(bytes).ok());
+            .and_then(|val| ContentDispositionAttr::FileName.extract_from(val))
+            .and_then(|attr| std::str::from_utf8(attr).ok())
+            .map(String::from);
 
         ContentDisposition { field_name, file_name }
     }
