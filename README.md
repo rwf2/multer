@@ -70,7 +70,7 @@ async fn get_byte_stream_from_somewhere() -> (impl Stream<Item = Result<Bytes, I
 ## Prevent Denial of Service (DoS) Attacks
 
 This crate also provides some APIs to prevent potential DoS attacks with fine grained control. It's recommended to add some constraints
-on field (specially text field) size to avoid potential DoS attacks from attackers running the server out of memory.
+on field (specially text field) size to prevent DoS attacks exhausting the server's memory.
 
 An example:
 
