@@ -1,12 +1,15 @@
 #![no_main]
 
 use std::convert::Infallible;
+use std::time::Duration;
 
 use multer::Multipart;
 use multer::bytes::Bytes;
 use futures_util::stream::once;
 use libfuzzer_sys::fuzz_target;
-use tokio::runtime;
+use tokio::{runtime, time::timeout};
+
+const FIELD_TIMEOUT: Duration = Duration::from_millis(10);
 
 fuzz_target!(|data: &[u8]| {
     let data = data.to_vec();
@@ -14,14 +17,19 @@ fuzz_target!(|data: &[u8]| {
 
     let mut multipart = Multipart::new(stream, "X-BOUNDARY");
 
-    let rt = runtime::Builder::new_current_thread().build().expect("runtime");
+    let rt = runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .expect("runtime");
+
     rt.block_on(async {
         let mut breaks = 0;
         while breaks < 3 {
-            let field = multipart.next_field().await;
+            let field = timeout(FIELD_TIMEOUT, multipart.next_field()).await;
             match field {
-                Err(_) | Ok(None) => breaks += 1,
-                Ok(Some(_)) => continue,
+                Err(_) => panic!("timed out waiting for field"),
+                Ok(Err(_)) | Ok(Ok(None)) => breaks += 1,
+                Ok(Ok(Some(_))) => continue,
             }
         }
     })

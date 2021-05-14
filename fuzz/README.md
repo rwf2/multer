@@ -11,5 +11,5 @@ the number of CPUs to use for fuzzing:
 
 ```sh
 cargo fuzz list # get list of targets
-cargo fuzz $target -j $n
+cargo fuzz run $target -j $n
 ```
