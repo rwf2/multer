@@ -27,7 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
     // Create a `Multipart` instance from that byte stream and the constraints.
-    let mut multipart = Multipart::new_with_constraints(stream, boundary, constraints);
+    let mut multipart = Multipart::with_constraints(stream, boundary, constraints);
 
     // Iterate over the fields, use `next_field()` to get the next field.
     while let Some(field) = multipart.next_field().await? {

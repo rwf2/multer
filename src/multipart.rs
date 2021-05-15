@@ -56,28 +56,12 @@ impl Multipart {
         E: Into<Box<dyn std::error::Error + Send + Sync>> + 'static,
         B: Into<String>,
     {
-        let constraints = Constraints::default();
-
-        let stream = stream
-            .map_ok(|b| b.into())
-            .map_err(|err| crate::Error::StreamReadFailed(err.into()));
-
-        let state = MultipartState {
-            buffer: StreamBuffer::new(stream, constraints.size_limit.whole_stream),
-            boundary: boundary.into(),
-            stage: StreamingStage::FindingFirstBoundary,
-            next_field_idx: 0,
-            curr_field_name: None,
-            curr_field_size_limit: constraints.size_limit.per_field,
-            curr_field_size_counter: 0,
-        };
-
-        Multipart { state, constraints }
+        Multipart::with_constraints(stream, boundary, Constraints::default())
     }
 
     /// Construct a new `Multipart` instance with the given [`Bytes`] stream and
     /// the boundary.
-    pub fn new_with_constraints<S, O, E, B>(stream: S, boundary: B, constraints: Constraints) -> Multipart
+    pub fn with_constraints<S, O, E, B>(stream: S, boundary: B, constraints: Constraints) -> Self
     where
         S: Stream<Item = Result<O, E>> + Send + 'static,
         O: Into<Bytes> + 'static,
@@ -166,13 +150,13 @@ impl Multipart {
     /// ```
     #[cfg(feature = "tokio-io")]
     #[cfg_attr(nightly, doc(cfg(feature = "tokio-io")))]
-    pub fn with_reader_with_constraints<R, B>(reader: R, boundary: B, constraints: Constraints) -> Multipart
+    pub fn with_reader_with_constraints<R, B>(reader: R, boundary: B, constraints: Constraints) -> Self
     where
         R: AsyncRead + Unpin + Send + 'static,
         B: Into<String>,
     {
         let stream = ReaderStream::new(reader);
-        Multipart::new_with_constraints(stream, boundary, constraints)
+        Multipart::with_constraints(stream, boundary, constraints)
     }
 
     /// Yields the next [`Field`] if available.

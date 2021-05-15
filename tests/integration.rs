@@ -126,7 +126,7 @@ async fn test_multipart_constraint_allowed_fields_normal() {
     );
 
     let constraints = Constraints::new().allowed_fields(vec!["my_text_field", "my_file_field"]);
-    let mut m = Multipart::new_with_constraints(stream, "X-BOUNDARY", constraints);
+    let mut m = Multipart::with_constraints(stream, "X-BOUNDARY", constraints);
 
     assert_eq!(
         m.next_field().await.unwrap().unwrap().text().await.unwrap(),
@@ -149,7 +149,7 @@ async fn test_multipart_constraint_allowed_fields_unknown_field() {
     );
 
     let constraints = Constraints::new().allowed_fields(vec!["my_text_field"]);
-    let mut m = Multipart::new_with_constraints(stream, "X-BOUNDARY", constraints);
+    let mut m = Multipart::with_constraints(stream, "X-BOUNDARY", constraints);
 
     assert!(m.next_field().await.unwrap().is_some());
     assert!(m.next_field().await.unwrap().is_some());
@@ -169,7 +169,7 @@ async fn test_multipart_constraint_size_limit_whole_stream() {
         .allowed_fields(vec!["my_text_field", "my_file_field"])
         .size_limit(SizeLimit::new().whole_stream(248));
 
-    let mut m = Multipart::new_with_constraints(stream, "X-BOUNDARY", constraints);
+    let mut m = Multipart::with_constraints(stream, "X-BOUNDARY", constraints);
 
     assert_eq!(
         m.next_field().await.unwrap().unwrap().text().await.unwrap(),
@@ -195,7 +195,7 @@ async fn test_multipart_constraint_size_limit_whole_stream_size_exceeded() {
         .allowed_fields(vec!["my_text_field", "my_file_field"])
         .size_limit(SizeLimit::new().whole_stream(100));
 
-    let mut m = Multipart::new_with_constraints(stream, "X-BOUNDARY", constraints);
+    let mut m = Multipart::with_constraints(stream, "X-BOUNDARY", constraints);
 
     assert!(m.next_field().await.unwrap().is_some());
     assert!(m.next_field().await.unwrap().is_some());
@@ -215,7 +215,7 @@ async fn test_multipart_constraint_size_limit_per_field() {
         .allowed_fields(vec!["my_text_field", "my_file_field"])
         .size_limit(SizeLimit::new().whole_stream(248).per_field(100));
 
-    let mut m = Multipart::new_with_constraints(stream, "X-BOUNDARY", constraints);
+    let mut m = Multipart::with_constraints(stream, "X-BOUNDARY", constraints);
 
     assert_eq!(
         m.next_field().await.unwrap().unwrap().text().await.unwrap(),
@@ -241,7 +241,7 @@ async fn test_multipart_constraint_size_limit_per_field_size_exceeded() {
         .allowed_fields(vec!["my_text_field", "my_file_field"])
         .size_limit(SizeLimit::new().whole_stream(248).per_field(10));
 
-    let mut m = Multipart::new_with_constraints(stream, "X-BOUNDARY", constraints);
+    let mut m = Multipart::with_constraints(stream, "X-BOUNDARY", constraints);
 
     assert!(m.next_field().await.unwrap().is_some());
     assert!(m.next_field().await.unwrap().is_some());
@@ -267,7 +267,7 @@ async fn test_multipart_constraint_size_limit_for_field() {
                 .for_field("my_file_field", 30),
         );
 
-    let mut m = Multipart::new_with_constraints(stream, "X-BOUNDARY", constraints);
+    let mut m = Multipart::with_constraints(stream, "X-BOUNDARY", constraints);
 
     assert_eq!(
         m.next_field().await.unwrap().unwrap().text().await.unwrap(),
@@ -299,7 +299,7 @@ async fn test_multipart_constraint_size_limit_for_field_size_exceeded() {
                 .for_field("my_file_field", 10),
         );
 
-    let mut m = Multipart::new_with_constraints(stream, "X-BOUNDARY", constraints);
+    let mut m = Multipart::with_constraints(stream, "X-BOUNDARY", constraints);
 
     assert!(m.next_field().await.unwrap().is_some());
     assert!(m.next_field().await.unwrap().is_some());

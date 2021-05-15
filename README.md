@@ -95,7 +95,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
          );
 
     // Create a `Multipart` instance from a stream and the constraints.
-    let mut multipart = Multipart::new_with_constraints(some_stream, "X-BOUNDARY", constraints);
+    let mut multipart = Multipart::with_constraints(some_stream, "X-BOUNDARY", constraints);
 
     while let Some(field) = multipart.next_field().await.unwrap() {
         let content = field.text().await.unwrap();
