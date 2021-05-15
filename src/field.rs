@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use bytes::{Bytes, BytesMut};
@@ -8,10 +9,11 @@ use futures_util::stream::{Stream, TryStreamExt};
 use http::header::HeaderMap;
 #[cfg(feature = "json")]
 use serde::de::DeserializeOwned;
+use spin::mutex::spin::SpinMutex as Mutex;
 
 use crate::content_disposition::ContentDisposition;
-use crate::helpers;
-use crate::state::{MultipartState, StreamingStage};
+use crate::multipart::{MultipartState, StreamingStage};
+use crate::{helpers, Error};
 
 /// A single field in a multipart stream.
 ///
@@ -43,66 +45,51 @@ use crate::state::{MultipartState, StreamingStage};
 ///
 /// [`Multipart`]: crate::Multipart
 #[derive(Debug)]
-pub struct Field<'a> {
-    state: &'a mut MultipartState,
+pub struct Field<'r> {
+    state: Arc<Mutex<MultipartState<'r>>>,
     done: bool,
-    data: FieldData,
-}
-
-/// Owned field data. This is used by `Multipart` to extend the lifetime of a
-/// `Field`.
-#[derive(Debug)]
-pub(crate) struct FieldData {
     headers: HeaderMap,
     content_disposition: ContentDisposition,
     content_type: Option<mime::Mime>,
     idx: usize,
 }
 
-impl FieldData {
-    pub(crate) fn new(headers: HeaderMap, idx: usize, content_disposition: ContentDisposition) -> Self {
+impl<'r> Field<'r> {
+    pub(crate) fn new(
+        state: Arc<Mutex<MultipartState<'r>>>,
+        headers: HeaderMap,
+        idx: usize,
+        content_disposition: ContentDisposition,
+    ) -> Self {
         let content_type = helpers::parse_content_type(&headers);
-
-        FieldData {
+        Field {
+            state,
             headers,
             content_disposition,
             content_type,
             idx,
-        }
-    }
-
-    pub(crate) fn name(&self) -> Option<&str> {
-        self.content_disposition.field_name.as_deref()
-    }
-}
-
-impl<'a> Field<'a> {
-    pub(crate) fn from_data(state: &'a mut MultipartState, data: FieldData) -> Self {
-        Self {
-            state,
             done: false,
-            data,
         }
     }
 
     /// The field name found in the [`Content-Disposition`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Disposition) header.
     pub fn name(&self) -> Option<&str> {
-        self.data.content_disposition.field_name.as_deref()
+        self.content_disposition.field_name.as_deref()
     }
 
     /// The file name found in the [`Content-Disposition`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Disposition) header.
     pub fn file_name(&self) -> Option<&str> {
-        self.data.content_disposition.file_name.as_deref()
+        self.content_disposition.file_name.as_deref()
     }
 
     /// Get the content type of the field.
     pub fn content_type(&self) -> Option<&mime::Mime> {
-        self.data.content_type.as_ref()
+        self.content_type.as_ref()
     }
 
     /// Get a map of headers as [`HeaderMap`].
     pub fn headers(&self) -> &HeaderMap {
-        &self.data.headers
+        &self.headers
     }
 
     /// Get the full data of the field as [`Bytes`].
@@ -324,42 +311,49 @@ impl<'a> Field<'a> {
     /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
     /// ```
     pub fn index(&self) -> usize {
-        self.data.idx
+        self.idx
     }
 }
 
 impl Stream for Field<'_> {
-    type Item = Result<Bytes, crate::Error>;
+    type Item = Result<Bytes, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if self.done {
             return Poll::Ready(None);
         }
 
-        let state = &mut *self.state;
+        debug_assert!(self.state.try_lock().is_some(), "expected exlusive lock");
+        let state = self.state.clone();
+        let mut lock = match state.try_lock() {
+            Some(lock) => lock,
+            None => return Poll::Ready(Some(Err(Error::LockFailure))),
+        };
 
+        let state = &mut *lock;
         if let Err(err) = state.buffer.poll_stream(cx) {
             return Poll::Ready(Some(Err(crate::Error::StreamReadFailed(err.into()))));
         }
 
         match state
             .buffer
-            .read_field_data(state.boundary.as_str(), state.curr_field_name.as_deref())
+            .read_field_data(&state.boundary, state.curr_field_name.as_deref())
         {
             Ok(Some((done, bytes))) => {
-                self.state.curr_field_size_counter += bytes.len() as u64;
+                state.curr_field_size_counter += bytes.len() as u64;
 
-                if self.state.curr_field_size_counter > self.state.curr_field_size_limit {
+                if state.curr_field_size_counter > state.curr_field_size_limit {
                     return Poll::Ready(Some(Err(crate::Error::FieldSizeExceeded {
-                        limit: self.state.curr_field_size_limit,
-                        field_name: self.state.curr_field_name.clone(),
+                        limit: state.curr_field_size_limit,
+                        field_name: state.curr_field_name.clone(),
                     })));
                 }
 
                 if done {
+                    state.stage = StreamingStage::ReadingBoundary;
                     self.done = true;
-                    self.state.stage = StreamingStage::ReadingBoundary;
                 }
+
                 Poll::Ready(Some(Ok(bytes)))
             }
             Ok(None) => Poll::Pending,

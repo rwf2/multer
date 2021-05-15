@@ -7,18 +7,18 @@ use futures_util::stream::Stream;
 
 use crate::constants;
 
-pub(crate) struct StreamBuffer {
+pub(crate) struct StreamBuffer<'r> {
     pub(crate) eof: bool,
     pub(crate) buf: BytesMut,
-    pub(crate) stream: Pin<Box<dyn Stream<Item = Result<Bytes, crate::Error>> + Send>>,
+    pub(crate) stream: Pin<Box<dyn Stream<Item = Result<Bytes, crate::Error>> + Send + 'r>>,
     pub(crate) whole_stream_size_limit: u64,
     pub(crate) stream_size_counter: u64,
 }
 
-impl StreamBuffer {
+impl<'r> StreamBuffer<'r> {
     pub fn new<S>(stream: S, whole_stream_size_limit: u64) -> Self
     where
-        S: Stream<Item = Result<Bytes, crate::Error>> + Send + 'static,
+        S: Stream<Item = Result<Bytes, crate::Error>> + Send + 'r,
     {
         StreamBuffer {
             eof: false,
@@ -162,7 +162,7 @@ impl StreamBuffer {
     }
 }
 
-impl fmt::Debug for StreamBuffer {
+impl fmt::Debug for StreamBuffer<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("StreamBuffer").finish()
     }

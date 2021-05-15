@@ -131,10 +131,9 @@ mod field;
 mod helpers;
 mod multipart;
 mod size_limit;
-mod state;
 
 /// A Result type often returned from methods that can have `multer` errors.
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// Parses the `Content-Type` header to extract the boundary value.
 ///

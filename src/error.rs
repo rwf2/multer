@@ -60,8 +60,8 @@ pub enum Error {
     StreamReadFailed(BoxError),
 
     /// Failed to lock the multipart shared state for any changes.
-    #[display(fmt = "failed to lock multipart state: {}", _0)]
-    LockFailure(BoxError),
+    #[display(fmt = "failed to lock multipart state")]
+    LockFailure,
 
     /// The `Content-Type` header is not `multipart/form-data`.
     #[display(fmt = "Content-Type is not multipart/form-data")]
