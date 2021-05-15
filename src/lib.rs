@@ -104,7 +104,7 @@
 //!
 //! For more examples, please visit [examples](https://github.com/rousan/multer-rs/tree/master/examples).
 
-#![forbid(unsafe_code, future_incompatible)]
+#![forbid(unsafe_code)]
 #![warn(
     missing_debug_implementations,
     rust_2018_idioms,
