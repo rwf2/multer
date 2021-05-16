@@ -18,7 +18,36 @@ use crate::{constants, helpers, Result};
 /// Represents the implementation of `multipart/form-data` formatted data.
 ///
 /// This will parse the source stream into [`Field`] instances via
-/// [`next_field`](Self::next_field).
+/// [`next_field()`](Self::next_field).
+///
+/// # Field Exclusivity
+///
+/// A `Field` represents a raw, self-decoding stream into multipart data. As
+/// such, only _one_ `Field` from a given `Multipart` instance may be live at
+/// once. That is, a `Field` emitted by `next_field()` must be dropped before
+/// calling `next_field()` again. Failure to do so will result in an error.
+///
+/// ```rust
+/// use std::convert::Infallible;
+///
+/// use bytes::Bytes;
+/// use futures_util::stream::once;
+/// use multer::Multipart;
+///
+/// # async fn run() {
+/// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; \
+///     name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+///
+/// let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
+/// let mut multipart = Multipart::new(stream, "X-BOUNDARY");
+///
+/// let field1 = multipart.next_field().await;
+/// let field2 = multipart.next_field().await;
+///
+/// assert!(field2.is_err());
+/// # }
+/// # tokio::runtime::Runtime::new().unwrap().block_on(run());
+/// ```
 ///
 /// # Examples
 ///
@@ -30,8 +59,9 @@ use crate::{constants, helpers, Result};
 /// use multer::Multipart;
 ///
 /// # async fn run() {
-/// let data =
-///     "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+/// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; \
+///     name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+///
 /// let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
 /// let mut multipart = Multipart::new(stream, "X-BOUNDARY");
 ///
@@ -184,6 +214,10 @@ impl<'r> Multipart<'r> {
     }
 
     /// Yields the next [`Field`] if available.
+    ///
+    /// Any previous `Field` returned by this method must be dropped before
+    /// calling this method or [`Multipart::next_field_with_idx()`] again. See
+    /// [field-exclusivity](#field-exclusivity) for details.
     pub async fn next_field(&mut self) -> Result<Option<Field<'r>>> {
         // This is consistent as we have an `&mut` and `Field` is not `Clone`.
         // Here, we are guaranteeing that the returned `Field` will be the
@@ -393,6 +427,10 @@ impl<'r> Multipart<'r> {
     /// Yields the next [`Field`] with their positioning index as a tuple
     /// `(`[`usize`]`, `[`Field`]`)`.
     ///
+    /// Any previous `Field` returned by this method must be dropped before
+    /// calling this method or [`Multipart::next_field()`] again. See
+    /// [field-exclusivity](#field-exclusivity) for details.
+    ///
     /// # Examples
     ///
     /// ```
@@ -403,8 +441,9 @@ impl<'r> Multipart<'r> {
     /// use multer::Multipart;
     ///
     /// # async fn run() {
-    /// let data =
-    ///     "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+    /// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; \
+    ///     name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+    ///
     /// let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
     /// let mut multipart = Multipart::new(stream, "X-BOUNDARY");
     ///

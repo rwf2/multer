@@ -20,6 +20,12 @@ use crate::{helpers, Error};
 /// Its content can be accessed via the [`Stream`] API or the methods defined in
 /// this type.
 ///
+/// # Lifetime
+///
+/// The lifetime of the stream `'r` corresponds to the lifetime of the
+/// underlying `Stream`. If the underlying stream holds no references directly
+/// or transitively, then the lifetime can be `'static`.
+///
 /// # Examples
 ///
 /// ```
@@ -30,8 +36,9 @@ use crate::{helpers, Error};
 /// use multer::Multipart;
 ///
 /// # async fn run() {
-/// let data =
-///     "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+/// let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; \
+///     name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+///
 /// let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
 /// let mut multipart = Multipart::new(stream, "X-BOUNDARY");
 ///

@@ -1,8 +1,9 @@
 //! An async parser for `multipart/form-data` content-type in Rust.
 //!
-//! It accepts a [`Stream`](futures::Stream) of [`Bytes`](bytes::Bytes) as a
-//! source, so that it can be plugged into any async Rust environment e.g. any
-//! async server.
+//! It accepts a [`Stream`](futures_util::stream::Stream) of
+//! [`Bytes`](bytes::Bytes), or with the `tokio-io` feature enabled, an
+//! `AsyncRead` reader as a source, so that it can be plugged into any async
+//! Rust environment e.g. any async server.
 //!
 //! # Examples
 //!
@@ -44,10 +45,10 @@
 //!
 //! // Generate a byte stream and the boundary from somewhere e.g. server request body.
 //! async fn get_byte_stream_from_somewhere() -> (impl Stream<Item = Result<Bytes, Infallible>>, &'static str) {
-//!     let data =
-//!         "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
-//!     let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
+//!     let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; \
+//!         name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
 //!
+//!     let stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
 //!     (stream, "X-BOUNDARY")
 //! }
 //! ```
@@ -62,28 +63,29 @@
 //! An example:
 //!
 //! ```
-//! use multer::{Multipart, Constraints, SizeLimit};
+//! use multer::{Constraints, Multipart, SizeLimit};
 //! # use bytes::Bytes;
 //! # use std::convert::Infallible;
 //! # use futures_util::stream::once;
 //!
 //! # async fn run() {
-//! # let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
+//! # let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; \
+//! #   name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
 //! # let some_stream = once(async move { Result::<Bytes, Infallible>::Ok(Bytes::from(data)) });
 //! // Create some constraints to be applied to the fields to prevent DoS attack.
 //! let constraints = Constraints::new()
-//!      // We only accept `my_text_field` and `my_file_field` fields,
-//!      // For any unknown field, we will throw an error.
-//!      .allowed_fields(vec!["my_text_field", "my_file_field"])
-//!      .size_limit(
-//!          SizeLimit::new()
-//!              // Set 15mb as size limit for the whole stream body.
-//!              .whole_stream(15 * 1024 * 1024)
-//!              // Set 10mb as size limit for all fields.
-//!              .per_field(10 * 1024 * 1024)
-//!              // Set 30kb as size limit for our text field only.
-//!              .for_field("my_text_field", 30 * 1024),
-//!      );
+//!     // We only accept `my_text_field` and `my_file_field` fields,
+//!     // For any unknown field, we will throw an error.
+//!     .allowed_fields(vec!["my_text_field", "my_file_field"])
+//!     .size_limit(
+//!         SizeLimit::new()
+//!             // Set 15mb as size limit for the whole stream body.
+//!             .whole_stream(15 * 1024 * 1024)
+//!             // Set 10mb as size limit for all fields.
+//!             .per_field(10 * 1024 * 1024)
+//!             // Set 30kb as size limit for our text field only.
+//!             .for_field("my_text_field", 30 * 1024),
+//!     );
 //!
 //! // Create a `Multipart` instance from a stream and the constraints.
 //! let mut multipart = Multipart::with_constraints(some_stream, "X-BOUNDARY", constraints);
