@@ -1,10 +1,10 @@
 version: 1.0.0
 checklist:
-  - name: Checkout develop and sync with remote
+  - name: Checkout master and sync with remote
     type: auto
     run:
-      - git checkout develop
-      - git push
+      - git checkout master
+      - git pull
   - name: Check syntax
     type: auto
     run:
@@ -13,10 +13,6 @@ checklist:
     type: auto
     run:
       - cargo test --release --features="all"
-  - name: Start a new release branch
-    type: auto
-    run:
-      - git flow release start "v${VERSION}"
   - name: Make sure code is formatted
     type: auto
     run:
@@ -30,16 +26,14 @@ checklist:
     type: auto
     run:
       - git add --all && git commit -m "Bump version"
-  - name: Finish release branch
+  - name: Create a release tag
     type: auto
     run:
-      - git flow release finish -s "v${VERSION}"
+      - git tag "v${VERSION}" -a
   - name: Push branches and tags to Github
     type: auto
     run:
-      - git checkout master
       - git push origin master
-      - git push origin develop
       - git push --tags
   - name: Edit tag on Github
     type: manual
@@ -50,4 +44,3 @@ checklist:
     confirm: Are you sure to publish it to crates.io?
     run:
       - cargo publish
-      - git checkout develop
