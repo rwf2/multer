@@ -27,7 +27,7 @@ tokio-io = ["tokio", "tokio-util"]
 log = "0.4"
 bytes = "1.0"
 futures-util = { version = "0.3", default-features = false }
-twoway = "0.2"
+memchr = "2.4"
 http = "0.2"
 httparse = "1.3"
 mime = "0.3"
