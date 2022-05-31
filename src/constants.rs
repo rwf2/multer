@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 pub(crate) const DEFAULT_WHOLE_STREAM_SIZE_LIMIT: u64 = std::u64::MAX;
 pub(crate) const DEFAULT_PER_FIELD_SIZE_LIMIT: u64 = std::u64::MAX;
 
@@ -16,10 +18,15 @@ pub(crate) enum ContentDispositionAttr {
 }
 
 impl ContentDispositionAttr {
-    pub fn extract_from<'h>(&self, header: &'h [u8]) -> Option<&'h [u8]> {
+    /// Extract ContentDisposition Attribute from header.
+    ///
+    /// Some older clients may not quote the name or filename, so we allow them, but require them
+    /// to be percent encoded. Only allocates if percent decoding, and there are characters that
+    /// need to be decoded.
+    pub fn extract_from<'h>(&self, header: &'h [u8]) -> Option<Cow<'h, str>> {
         let prefix = match self {
-            ContentDispositionAttr::Name => &b"name=\""[..],
-            ContentDispositionAttr::FileName => &b"filename=\""[..],
+            ContentDispositionAttr::Name => &b"name="[..],
+            ContentDispositionAttr::FileName => &b"filename="[..],
         };
 
         if let Some(i) = memchr::memmem::find(header, prefix) {
@@ -29,8 +36,16 @@ impl ContentDispositionAttr {
             }
 
             let rest = &header[(i + prefix.len())..];
-            if let Some(j) = memchr::memmem::find(rest, b"\"") {
-                return Some(&rest[..j]);
+            let j = memchr::memmem::find(rest, b";").unwrap_or(rest.len());
+            let content = &rest[..j];
+            if content.starts_with(b"\"") && content.ends_with(b"\"") {
+                let content = &rest[1..rest.len() - 1];
+                if memchr::memmem::find(content, b"\"").is_some() {
+                    return None;
+                }
+                return std::str::from_utf8(content).map(|s| s.into()).ok();
+            } else {
+                return percent_encoding::percent_decode(content).decode_utf8().ok();
             }
         }
 
