@@ -16,10 +16,15 @@ pub(crate) enum ContentDispositionAttr {
 }
 
 impl ContentDispositionAttr {
+    /// Extract ContentDisposition Attribute from header.
+    ///
+    /// Some older clients may not quote the name or filename, so we allow them,
+    /// but require them to be percent encoded. Only allocates if percent
+    /// decoding, and there are characters that need to be decoded.
     pub fn extract_from<'h>(&self, header: &'h [u8]) -> Option<&'h [u8]> {
         let prefix = match self {
-            ContentDispositionAttr::Name => &b"name=\""[..],
-            ContentDispositionAttr::FileName => &b"filename=\""[..],
+            ContentDispositionAttr::Name => &b"name="[..],
+            ContentDispositionAttr::FileName => &b"filename="[..],
         };
 
         if let Some(i) = memchr::memmem::find(header, prefix) {
@@ -28,10 +33,18 @@ impl ContentDispositionAttr {
                 return None;
             }
 
+            // Find the end of attribute.
             let rest = &header[(i + prefix.len())..];
-            if let Some(j) = memchr::memmem::find(rest, b"\"") {
-                return Some(&rest[..j]);
+            let j = memchr::memchr(b';', rest).unwrap_or(rest.len());
+
+            // Handle quoted strings.
+            let content = &rest[..j];
+            if content.starts_with(b"\"") {
+                let k = memchr::memchr(b'"', &content[1..])?;
+                return Some(&content[1..(k + 1)]);
             }
+
+            return Some(content);
         }
 
         None
@@ -87,5 +100,20 @@ mod tests {
         let filename = ContentDispositionAttr::FileName.extract_from(val);
         assert_eq!(filename.unwrap(), "কখগ-你好.txt".as_bytes());
         assert!(name.is_none());
+    }
+
+    #[test]
+    fn test_content_disposition_name_unquoted() {
+        let val = br#"form-data; name=my_field"#;
+        let name = ContentDispositionAttr::Name.extract_from(val);
+        let filename = ContentDispositionAttr::FileName.extract_from(val);
+        assert_eq!(name.unwrap(), b"my_field");
+        assert!(filename.is_none());
+
+        let val = br#"form-data; name=my_field; filename=file-name.txt"#;
+        let name = ContentDispositionAttr::Name.extract_from(val);
+        let filename = ContentDispositionAttr::FileName.extract_from(val);
+        assert_eq!(name.unwrap(), b"my_field");
+        assert_eq!(filename.unwrap(), b"file-name.txt");
     }
 }
