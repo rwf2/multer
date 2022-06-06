@@ -14,10 +14,12 @@ impl ContentDisposition {
 
         let field_name = content_disposition
             .and_then(|val| ContentDispositionAttr::Name.extract_from(val))
+            .and_then(|attr| std::str::from_utf8(attr).ok())
             .map(String::from);
 
         let file_name = content_disposition
             .and_then(|val| ContentDispositionAttr::FileName.extract_from(val))
+            .and_then(|attr| std::str::from_utf8(attr).ok())
             .map(String::from);
 
         ContentDisposition { field_name, file_name }

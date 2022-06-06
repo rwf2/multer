@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 pub(crate) const DEFAULT_WHOLE_STREAM_SIZE_LIMIT: u64 = std::u64::MAX;
 pub(crate) const DEFAULT_PER_FIELD_SIZE_LIMIT: u64 = std::u64::MAX;
 
@@ -23,7 +21,7 @@ impl ContentDispositionAttr {
     /// Some older clients may not quote the name or filename, so we allow them, but require them
     /// to be percent encoded. Only allocates if percent decoding, and there are characters that
     /// need to be decoded.
-    pub fn extract_from<'h>(&self, header: &'h [u8]) -> Option<Cow<'h, str>> {
+    pub fn extract_from<'h>(&self, header: &'h [u8]) -> Option<&'h [u8]> {
         let prefix = match self {
             ContentDispositionAttr::Name => &b"name="[..],
             ContentDispositionAttr::FileName => &b"filename="[..],
@@ -38,14 +36,13 @@ impl ContentDispositionAttr {
             let rest = &header[(i + prefix.len())..];
             let j = memchr::memmem::find(rest, b";").unwrap_or(rest.len());
             let content = &rest[..j];
-            if content.starts_with(b"\"") && content.ends_with(b"\"") {
-                let content = &content[1..content.len() - 1];
-                if memchr::memmem::find(content, b"\"").is_some() {
-                    return None;
+            if content.starts_with(b"\"") {
+                if let Some(end) = memchr::memmem::find(&content[1..], b"\"") {
+                    let content = &content[1..=end];
+                    return Some(content);
                 }
-                return std::str::from_utf8(content).map(|s| s.into()).ok();
             } else {
-                return percent_encoding::percent_decode(content).decode_utf8().ok();
+                return Some(content);
             }
         }
 
@@ -62,7 +59,7 @@ mod tests {
         let val = br#"form-data; name="my_field""#;
         let name = ContentDispositionAttr::Name.extract_from(val);
         let filename = ContentDispositionAttr::FileName.extract_from(val);
-        assert_eq!(name.unwrap(), "my_field");
+        assert_eq!(name.unwrap(), "my_field".as_bytes());
         assert!(filename.is_none());
     }
 
@@ -71,20 +68,20 @@ mod tests {
         let val = br#"form-data; name="my_field"; filename="file abc.txt""#;
         let name = ContentDispositionAttr::Name.extract_from(val);
         let filename = ContentDispositionAttr::FileName.extract_from(val);
-        assert_eq!(name.unwrap(), "my_field");
-        assert_eq!(filename.unwrap(), "file abc.txt");
+        assert_eq!(name.unwrap(), "my_field".as_bytes());
+        assert_eq!(filename.unwrap(), "file abc.txt".as_bytes());
 
         let val = "form-data; name=\"你好\"; filename=\"file abc.txt\"".as_bytes();
         let name = ContentDispositionAttr::Name.extract_from(val);
         let filename = ContentDispositionAttr::FileName.extract_from(val);
-        assert_eq!(name.unwrap(), "你好");
-        assert_eq!(filename.unwrap(), "file abc.txt");
+        assert_eq!(name.unwrap(), "你好".as_bytes());
+        assert_eq!(filename.unwrap(), "file abc.txt".as_bytes());
 
         let val = "form-data; name=\"কখগ\"; filename=\"你好.txt\"".as_bytes();
         let name = ContentDispositionAttr::Name.extract_from(val);
         let filename = ContentDispositionAttr::FileName.extract_from(val);
-        assert_eq!(name.unwrap(), "কখগ");
-        assert_eq!(filename.unwrap(), "你好.txt");
+        assert_eq!(name.unwrap(), "কখগ".as_bytes());
+        assert_eq!(filename.unwrap(), "你好.txt".as_bytes());
     }
 
     #[test]
@@ -94,13 +91,13 @@ mod tests {
         let val = br#"form-data; filename="file-name.txt""#;
         let name = ContentDispositionAttr::Name.extract_from(val);
         let filename = ContentDispositionAttr::FileName.extract_from(val);
-        assert_eq!(filename.unwrap(), "file-name.txt");
+        assert_eq!(filename.unwrap(), "file-name.txt".as_bytes());
         assert!(name.is_none());
 
         let val = "form-data; filename=\"কখগ-你好.txt\"".as_bytes();
         let name = ContentDispositionAttr::Name.extract_from(val);
         let filename = ContentDispositionAttr::FileName.extract_from(val);
-        assert_eq!(filename.unwrap(), "কখগ-你好.txt");
+        assert_eq!(filename.unwrap(), "কখগ-你好.txt".as_bytes());
         assert!(name.is_none());
     }
 
@@ -109,13 +106,13 @@ mod tests {
         let val = br#"form-data; name=my_field"#;
         let name = ContentDispositionAttr::Name.extract_from(val);
         let filename = ContentDispositionAttr::FileName.extract_from(val);
-        assert_eq!(name.unwrap(), "my_field");
+        assert_eq!(name.unwrap(), "my_field".as_bytes());
         assert!(filename.is_none());
 
         let val = br#"form-data; name=my_field; filename=file-name.txt"#;
         let name = ContentDispositionAttr::Name.extract_from(val);
         let filename = ContentDispositionAttr::FileName.extract_from(val);
-        assert_eq!(name.unwrap(), "my_field");
-        assert_eq!(filename.unwrap(), "file-name.txt");
+        assert_eq!(name.unwrap(), "my_field".as_bytes());
+        assert_eq!(filename.unwrap(), "file-name.txt".as_bytes());
     }
 }
