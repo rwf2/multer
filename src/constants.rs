@@ -39,7 +39,7 @@ impl ContentDispositionAttr {
             let j = memchr::memmem::find(rest, b";").unwrap_or(rest.len());
             let content = &rest[..j];
             if content.starts_with(b"\"") && content.ends_with(b"\"") {
-                let content = &rest[1..rest.len() - 1];
+                let content = &content[1..content.len() - 1];
                 if memchr::memmem::find(content, b"\"").is_some() {
                     return None;
                 }
