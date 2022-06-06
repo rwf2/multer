@@ -62,7 +62,7 @@ mod tests {
         let val = br#"form-data; name="my_field""#;
         let name = ContentDispositionAttr::Name.extract_from(val);
         let filename = ContentDispositionAttr::FileName.extract_from(val);
-        assert_eq!(name.unwrap(), b"my_field");
+        assert_eq!(name.unwrap(), "my_field");
         assert!(filename.is_none());
     }
 
@@ -71,20 +71,20 @@ mod tests {
         let val = br#"form-data; name="my_field"; filename="file abc.txt""#;
         let name = ContentDispositionAttr::Name.extract_from(val);
         let filename = ContentDispositionAttr::FileName.extract_from(val);
-        assert_eq!(name.unwrap(), b"my_field");
-        assert_eq!(filename.unwrap(), b"file abc.txt");
+        assert_eq!(name.unwrap(), "my_field");
+        assert_eq!(filename.unwrap(), "file abc.txt");
 
         let val = "form-data; name=\"你好\"; filename=\"file abc.txt\"".as_bytes();
         let name = ContentDispositionAttr::Name.extract_from(val);
         let filename = ContentDispositionAttr::FileName.extract_from(val);
-        assert_eq!(name.unwrap(), "你好".as_bytes());
-        assert_eq!(filename.unwrap(), b"file abc.txt");
+        assert_eq!(name.unwrap(), "你好");
+        assert_eq!(filename.unwrap(), "file abc.txt");
 
         let val = "form-data; name=\"কখগ\"; filename=\"你好.txt\"".as_bytes();
         let name = ContentDispositionAttr::Name.extract_from(val);
         let filename = ContentDispositionAttr::FileName.extract_from(val);
-        assert_eq!(name.unwrap(), "কখগ".as_bytes());
-        assert_eq!(filename.unwrap(), "你好.txt".as_bytes());
+        assert_eq!(name.unwrap(), "কখগ");
+        assert_eq!(filename.unwrap(), "你好.txt");
     }
 
     #[test]
@@ -94,13 +94,28 @@ mod tests {
         let val = br#"form-data; filename="file-name.txt""#;
         let name = ContentDispositionAttr::Name.extract_from(val);
         let filename = ContentDispositionAttr::FileName.extract_from(val);
-        assert_eq!(filename.unwrap(), b"file-name.txt");
+        assert_eq!(filename.unwrap(), "file-name.txt");
         assert!(name.is_none());
 
         let val = "form-data; filename=\"কখগ-你好.txt\"".as_bytes();
         let name = ContentDispositionAttr::Name.extract_from(val);
         let filename = ContentDispositionAttr::FileName.extract_from(val);
-        assert_eq!(filename.unwrap(), "কখগ-你好.txt".as_bytes());
+        assert_eq!(filename.unwrap(), "কখগ-你好.txt");
         assert!(name.is_none());
+    }
+
+    #[test]
+    fn test_content_disposition_name_unquoted() {
+        let val = br#"form-data; name=my_field"#;
+        let name = ContentDispositionAttr::Name.extract_from(val);
+        let filename = ContentDispositionAttr::FileName.extract_from(val);
+        assert_eq!(name.unwrap(), "my_field");
+        assert!(filename.is_none());
+
+        let val = br#"form-data; name=my_field; filename=file-name.txt"#;
+        let name = ContentDispositionAttr::Name.extract_from(val);
+        let filename = ContentDispositionAttr::FileName.extract_from(val);
+        assert_eq!(name.unwrap(), "my_field");
+        assert_eq!(filename.unwrap(), "file-name.txt");
     }
 }
