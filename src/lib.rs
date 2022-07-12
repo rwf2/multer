@@ -44,7 +44,8 @@
 //! }
 //!
 //! // Generate a byte stream and the boundary from somewhere e.g. server request body.
-//! async fn get_byte_stream_from_somewhere() -> (impl Stream<Item = Result<Bytes, Infallible>>, &'static str) {
+//! async fn get_byte_stream_from_somewhere(
+//! ) -> (impl Stream<Item = Result<Bytes, Infallible>>, &'static str) {
 //!     let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; \
 //!         name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY--\r\n";
 //!
@@ -145,7 +146,10 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 /// # fn run(){
 /// let content_type = "multipart/form-data; boundary=ABCDEFG";
 ///
-/// assert_eq!(multer::parse_boundary(content_type), Ok("ABCDEFG".to_owned()));
+/// assert_eq!(
+///     multer::parse_boundary(content_type),
+///     Ok("ABCDEFG".to_owned())
+/// );
 /// # }
 /// # run();
 /// ```
