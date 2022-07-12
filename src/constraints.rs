@@ -45,7 +45,7 @@ use crate::size_limit::SizeLimit;
 /// # }
 /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Constraints {
     pub(crate) size_limit: SizeLimit,
     pub(crate) allowed_fields: Option<Vec<String>>,
@@ -83,15 +83,6 @@ impl Constraints {
                 .unwrap_or(false)
         } else {
             true
-        }
-    }
-}
-
-impl Default for Constraints {
-    fn default() -> Self {
-        Constraints {
-            size_limit: SizeLimit::default(),
-            allowed_fields: None,
         }
     }
 }
