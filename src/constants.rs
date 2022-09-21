@@ -33,18 +33,19 @@ impl ContentDispositionAttr {
                 return None;
             }
 
-            // Find the end of attribute.
+            // Handle quoted strings first, then unquoted string.
+            // FIXME: According to RFC6266 4.1, a 'quoted-string' (RFC 2616 2.2)
+            // can contain a 'quoted-pair', which can be used to escape a quote
+            // character in a name with `\`. That is, "a\"b" is a valid name.
+            // But this routine would truncate it to `a\`; this is wrong.
             let rest = &header[(i + prefix.len())..];
-            let j = memchr::memchr(b';', rest).unwrap_or(rest.len());
-
-            // Handle quoted strings.
-            let content = &rest[..j];
-            if content.starts_with(b"\"") {
-                let k = memchr::memchr(b'"', &content[1..])?;
-                return Some(&content[1..(k + 1)]);
+            if rest.starts_with(b"\"") {
+                let k = memchr::memchr(b'"', &rest[1..])?;
+                return Some(&rest[1..(k + 1)]);
+            } else {
+                let j = memchr::memchr(b';', rest).unwrap_or(rest.len());
+                return Some(&rest[..j]);
             }
-
-            return Some(content);
         }
 
         None
@@ -115,5 +116,41 @@ mod tests {
         let filename = ContentDispositionAttr::FileName.extract_from(val);
         assert_eq!(name.unwrap(), b"my_field");
         assert_eq!(filename.unwrap(), b"file-name.txt");
+    }
+
+    #[test]
+    fn test_content_disposition_name_quoted() {
+        let val = br#"form-data; name="my;f;ield""#;
+        let name = ContentDispositionAttr::Name.extract_from(val);
+        let filename = ContentDispositionAttr::FileName.extract_from(val);
+        assert_eq!(name.unwrap(), b"my;f;ield");
+        assert!(filename.is_none());
+
+        let val = br#"form-data; name=my_field; filename="file;name.txt""#;
+        let name = ContentDispositionAttr::Name.extract_from(val);
+        let filename = ContentDispositionAttr::FileName.extract_from(val);
+        assert_eq!(name.unwrap(), b"my_field");
+        assert_eq!(filename.unwrap(), b"file;name.txt");
+
+        let val = br#"form-data; name=; filename=filename.txt"#;
+        let name = ContentDispositionAttr::Name.extract_from(val);
+        let filename = ContentDispositionAttr::FileName.extract_from(val);
+        assert_eq!(name.unwrap(), b"");
+        assert_eq!(filename.unwrap(), b"filename.txt");
+
+        let val = br#"form-data; name=";"; filename=";""#;
+        let name = ContentDispositionAttr::Name.extract_from(val);
+        let filename = ContentDispositionAttr::FileName.extract_from(val);
+        assert_eq!(name.unwrap(), b";");
+        assert_eq!(filename.unwrap(), b";");
+    }
+
+    // FIXME: This test should pass.
+    #[test]
+    #[should_panic]
+    fn test_content_disposition_name_escaped_quote() {
+        let val = br#"form-data; name="my\"field\"name""#;
+        let name = ContentDispositionAttr::Name.extract_from(val);
+        assert_eq!(name.unwrap(), b"my\"field\"name");
     }
 }
