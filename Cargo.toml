@@ -1,6 +1,6 @@
 [package]
 name = "multer"
-version = "2.0.4"
+version = "2.0.5"
 description = "An async parser for `multipart/form-data` content-type in Rust."
 homepage = "https://github.com/rousan/multer-rs"
 repository = "https://github.com/rousan/multer-rs"
