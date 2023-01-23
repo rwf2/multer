@@ -1,0 +1,10 @@
+--X-BOUNDARY
+Content-Disposition: form-data; name="field1"
+
+value1
+--X-BOUNDARY
+Content-Disposition: form-data; filename="example.txt"; name="field2"
+
+value2
+--X-BOUNDARY--
+
