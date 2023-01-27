@@ -79,13 +79,36 @@ pub struct Multipart<'r> {
 #[derive(Debug)]
 pub(crate) struct MultipartState<'r> {
     pub(crate) buffer: StreamBuffer<'r>,
-    pub(crate) boundary: String,
+    pub(crate) boundary: Boundary,
     pub(crate) stage: StreamingStage,
     pub(crate) next_field_idx: usize,
     pub(crate) curr_field_name: Option<String>,
     pub(crate) curr_field_size_limit: u64,
     pub(crate) curr_field_size_counter: u64,
     pub(crate) constraints: Constraints,
+}
+
+#[derive(Debug)]
+pub(crate) struct Boundary(String);
+
+impl Boundary {
+    fn new(boundary: String) -> Self {
+        let cap = constants::CRLF.len() + constants::BOUNDARY_EXT.len() + boundary.len();
+        let mut buf = String::with_capacity(cap);
+        buf.push_str(constants::CRLF);
+        buf.push_str(constants::BOUNDARY_EXT);
+        buf.push_str(&boundary);
+        Self(buf)
+    }
+
+    pub(crate) fn as_bytes(&self) -> &[u8] {
+        // "--" + boundary
+        self.0[2..].as_bytes()
+    }
+
+    pub(crate) fn as_bytes_with_crlf(&self) -> &[u8] {
+        self.0.as_bytes()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,7 +151,7 @@ impl<'r> Multipart<'r> {
         Multipart {
             state: Arc::new(Mutex::new(MultipartState {
                 buffer: StreamBuffer::new(stream, constraints.size_limit.whole_stream),
-                boundary: boundary.into(),
+                boundary: Boundary::new(boundary.into()),
                 stage: StreamingStage::FindingFirstBoundary,
                 next_field_idx: 0,
                 curr_field_name: None,
@@ -251,9 +274,7 @@ impl<'r> Multipart<'r> {
         }
 
         if state.stage == StreamingStage::FindingFirstBoundary {
-            let boundary = &state.boundary;
-            let boundary_deriv = format!("{}{}", constants::BOUNDARY_EXT, boundary);
-            match state.buffer.read_to(boundary_deriv.as_bytes()) {
+            match state.buffer.read_to(state.boundary.as_bytes()) {
                 Some(_) => state.stage = StreamingStage::ReadingBoundary,
                 None => {
                     if let Err(err) = state.buffer.poll_stream(cx) {
@@ -270,7 +291,7 @@ impl<'r> Multipart<'r> {
         if state.stage == StreamingStage::ReadingFieldData {
             match state
                 .buffer
-                .read_field_data(state.boundary.as_str(), state.curr_field_name.as_deref())?
+                .read_field_data(state.boundary.as_bytes_with_crlf(), state.curr_field_name.as_deref())?
             {
                 Some((done, bytes)) => {
                     state.curr_field_size_counter += bytes.len() as u64;
@@ -295,8 +316,7 @@ impl<'r> Multipart<'r> {
         }
 
         if state.stage == StreamingStage::ReadingBoundary {
-            let boundary = &state.boundary;
-            let boundary_deriv_len = constants::BOUNDARY_EXT.len() + boundary.len();
+            let boundary_deriv_len = state.boundary.as_bytes().len();
 
             let boundary_bytes = match state.buffer.read_exact(boundary_deriv_len) {
                 Some(bytes) => bytes,
@@ -309,7 +329,7 @@ impl<'r> Multipart<'r> {
                 }
             };
 
-            if &boundary_bytes[..] == format!("{}{}", constants::BOUNDARY_EXT, boundary).as_bytes() {
+            if &boundary_bytes[..] == state.boundary.as_bytes() {
                 state.stage = StreamingStage::DeterminingBoundaryType;
             } else {
                 return Poll::Ready(Err(crate::Error::IncompleteStream));

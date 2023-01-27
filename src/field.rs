@@ -344,7 +344,7 @@ impl Stream for Field<'_> {
 
         match state
             .buffer
-            .read_field_data(&state.boundary, state.curr_field_name.as_deref())
+            .read_field_data(state.boundary.as_bytes_with_crlf(), state.curr_field_name.as_deref())
         {
             Ok(Some((done, bytes))) => {
                 state.curr_field_size_counter += bytes.len() as u64;

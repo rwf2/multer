@@ -92,7 +92,7 @@ impl<'r> StreamBuffer<'r> {
 
     pub fn read_field_data(
         &mut self,
-        boundary: &str,
+        boundary: &[u8],
         field_name: Option<&str>,
     ) -> crate::Result<Option<(bool, Bytes)>> {
         log::trace!("finding next field: {:?}", field_name);
@@ -105,10 +105,9 @@ impl<'r> StreamBuffer<'r> {
             return Ok(None);
         }
 
-        let boundary_deriv = format!("{}{}{}", constants::CRLF, constants::BOUNDARY_EXT, boundary);
-        let b_len = boundary_deriv.len();
+        let b_len = boundary.len();
 
-        match memchr::memmem::find(&self.buf, boundary_deriv.as_bytes()) {
+        match memchr::memmem::find(&self.buf, boundary) {
             Some(idx) => {
                 log::trace!("new field found at {}", idx);
                 let bytes = self.buf.split_to(idx).freeze();
@@ -139,7 +138,7 @@ impl<'r> StreamBuffer<'r> {
                     Some(rel_idx) => {
                         let idx = rel_idx + rem_boundary_part_idx;
 
-                        match memchr::memmem::find(boundary_deriv.as_bytes(), &self.buf[idx..]) {
+                        match memchr::memmem::find(boundary, &self.buf[idx..]) {
                             Some(_) => {
                                 let bytes = self.buf.split_to(idx).freeze();
 
