@@ -227,6 +227,8 @@ impl<'r> Multipart<'r> {
     /// Any previous `Field` returned by this method must be dropped before
     /// calling this method or [`Multipart::next_field_with_idx()`] again. See
     /// [field-exclusivity](#field-exclusivity) for details.
+    ///
+    /// This method is available since version 2.1.0.
     pub fn poll_next_field(&mut self, cx: &mut Context<'_>) -> Poll<Result<Option<Field<'r>>>> {
         // This is consistent as we have an `&mut` and `Field` is not `Clone`.
         // Here, we are guaranteeing that the returned `Field` will be the
