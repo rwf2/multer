@@ -72,13 +72,13 @@ use crate::{constants, helpers, Result};
 /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
 /// ```
 #[derive(Debug)]
-pub struct Multipart<'r> {
-    state: Arc<Mutex<MultipartState<'r>>>,
+pub struct Multipart {
+    state: Arc<Mutex<MultipartState>>,
 }
 
 #[derive(Debug)]
-pub(crate) struct MultipartState<'r> {
-    pub(crate) buffer: StreamBuffer<'r>,
+pub(crate) struct MultipartState {
+    pub(crate) buffer: StreamBuffer,
     pub(crate) boundary: String,
     pub(crate) stage: StreamingStage,
     pub(crate) next_field_idx: usize,
@@ -99,14 +99,14 @@ pub(crate) enum StreamingStage {
     Eof,
 }
 
-impl<'r> Multipart<'r> {
+impl Multipart {
     /// Construct a new `Multipart` instance with the given [`Bytes`] stream and
     /// the boundary.
     pub fn new<S, O, E, B>(stream: S, boundary: B) -> Self
     where
-        S: Stream<Item = Result<O, E>> + Send + 'r,
+        S: Stream<Item = Result<O, E>> + Send + 'static,
         O: Into<Bytes> + 'static,
-        E: Into<Box<dyn std::error::Error + Send + Sync>> + 'r,
+        E: Into<Box<dyn std::error::Error + Send + Sync>> + 'static,
         B: Into<String>,
     {
         Multipart::with_constraints(stream, boundary, Constraints::default())
@@ -116,9 +116,9 @@ impl<'r> Multipart<'r> {
     /// the boundary.
     pub fn with_constraints<S, O, E, B>(stream: S, boundary: B, constraints: Constraints) -> Self
     where
-        S: Stream<Item = Result<O, E>> + Send + 'r,
+        S: Stream<Item = Result<O, E>> + Send + 'static,
         O: Into<Bytes> + 'static,
-        E: Into<Box<dyn std::error::Error + Send + Sync>> + 'r,
+        E: Into<Box<dyn std::error::Error + Send + Sync>> + 'static,
         B: Into<String>,
     {
         let stream = stream
@@ -218,7 +218,7 @@ impl<'r> Multipart<'r> {
     /// Any previous `Field` returned by this method must be dropped before
     /// calling this method or [`Multipart::next_field_with_idx()`] again. See
     /// [field-exclusivity](#field-exclusivity) for details.
-    pub async fn next_field(&mut self) -> Result<Option<Field<'r>>> {
+    pub async fn next_field(&mut self) -> Result<Option<Field>> {
         // This is consistent as we have an `&mut` and `Field` is not `Clone`.
         // Here, we are guaranteeing that the returned `Field` will be the
         // _only_ field with access to the multipart parsing state. This ensure
@@ -233,7 +233,7 @@ impl<'r> Multipart<'r> {
 
     // CORRECTNESS: This method must only be called only when it is guaranteed
     // that `self.state` is an exlusive `Arc`!
-    fn poll_next_field(&mut self, cx: &mut Context<'_>) -> Poll<Result<Option<Field<'r>>>> {
+    fn poll_next_field(&mut self, cx: &mut Context<'_>) -> Poll<Result<Option<Field>>> {
         debug_assert_eq!(Arc::strong_count(&self.state), 1);
         debug_assert!(self.state.try_lock().is_some(), "expected exlusive lock");
         let mut lock = match self.state.try_lock() {
@@ -453,7 +453,7 @@ impl<'r> Multipart<'r> {
     /// # }
     /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
     /// ```
-    pub async fn next_field_with_idx(&mut self) -> Result<Option<(usize, Field<'r>)>> {
+    pub async fn next_field_with_idx(&mut self) -> Result<Option<(usize, Field)>> {
         self.next_field().await.map(|f| f.map(|field| (field.index(), field)))
     }
 }

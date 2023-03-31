@@ -52,8 +52,8 @@ use crate::{helpers, Error};
 ///
 /// [`Multipart`]: crate::Multipart
 #[derive(Debug)]
-pub struct Field<'r> {
-    state: Arc<Mutex<MultipartState<'r>>>,
+pub struct Field {
+    state: Arc<Mutex<MultipartState>>,
     done: bool,
     headers: HeaderMap,
     content_disposition: ContentDisposition,
@@ -61,9 +61,9 @@ pub struct Field<'r> {
     idx: usize,
 }
 
-impl<'r> Field<'r> {
+impl Field {
     pub(crate) fn new(
-        state: Arc<Mutex<MultipartState<'r>>>,
+        state: Arc<Mutex<MultipartState>>,
         headers: HeaderMap,
         idx: usize,
         content_disposition: ContentDisposition,
@@ -322,7 +322,7 @@ impl<'r> Field<'r> {
     }
 }
 
-impl Stream for Field<'_> {
+impl Stream for Field {
     type Item = Result<Bytes, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
