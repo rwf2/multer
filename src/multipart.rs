@@ -219,21 +219,24 @@ impl<'r> Multipart<'r> {
     /// calling this method or [`Multipart::next_field_with_idx()`] again. See
     /// [field-exclusivity](#field-exclusivity) for details.
     pub async fn next_field(&mut self) -> Result<Option<Field<'r>>> {
+        future::poll_fn(|cx| self.poll_next_field(cx)).await
+    }
+
+    /// Yields the next [`Field`] if available.
+    ///
+    /// Any previous `Field` returned by this method must be dropped before
+    /// calling this method or [`Multipart::next_field_with_idx()`] again. See
+    /// [field-exclusivity](#field-exclusivity) for details.
+    pub fn poll_next_field(&mut self, cx: &mut Context<'_>) -> Poll<Result<Option<Field<'r>>>> {
         // This is consistent as we have an `&mut` and `Field` is not `Clone`.
         // Here, we are guaranteeing that the returned `Field` will be the
         // _only_ field with access to the multipart parsing state. This ensure
         // that lock failure can never occur. This is effectively a dynamic
         // version of passing an `&mut` of `self` to the `Field`.
         if Arc::strong_count(&self.state) != 1 {
-            return Err(Error::LockFailure);
+            return Poll::Ready(Err(Error::LockFailure));
         }
 
-        future::poll_fn(|cx| self.poll_next_field(cx)).await
-    }
-
-    // CORRECTNESS: This method must only be called only when it is guaranteed
-    // that `self.state` is an exlusive `Arc`!
-    fn poll_next_field(&mut self, cx: &mut Context<'_>) -> Poll<Result<Option<Field<'r>>>> {
         debug_assert_eq!(Arc::strong_count(&self.state), 1);
         debug_assert!(self.state.try_lock().is_some(), "expected exlusive lock");
         let mut lock = match self.state.try_lock() {
