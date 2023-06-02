@@ -75,11 +75,11 @@ impl Display for Error {
                 let name = field_name.as_deref().unwrap_or("<unknown>");
                 write!(f, "field {:?} received with incomplete data", name)
             }
-            Error::DecodeHeaderName { name, cause } => {
-                write!(f, "failed to decode field's raw header name: {:?} {}", name, cause)
+            Error::DecodeHeaderName { name, .. } => {
+                write!(f, "failed to decode field's raw header name: {:?}", name)
             }
-            Error::DecodeHeaderValue { cause, .. } => {
-                write!(f, "failed to decode field's raw header value: {}", cause)
+            Error::DecodeHeaderValue { .. } => {
+                write!(f, "failed to decode field's raw header value")
             }
             Error::FieldSizeExceeded { limit, field_name } => {
                 let name = field_name.as_deref().unwrap_or("<unknown>");
@@ -88,21 +88,34 @@ impl Display for Error {
             Error::StreamSizeExceeded { limit } => {
                 write!(f, "stream size exceeded limit: {} bytes", limit)
             }
-            Error::ReadHeaderFailed(e) => write!(f, "failed to read headers: {}", e),
-            Error::StreamReadFailed(e) => write!(f, "failed to read stream: {}", e),
-            Error::DecodeContentType(e) => write!(f, "failed to decode Content-Type: {}", e),
+            Error::ReadHeaderFailed(_) => write!(f, "failed to read headers"),
+            Error::StreamReadFailed(_) => write!(f, "failed to read stream"),
+            Error::DecodeContentType(_) => write!(f, "failed to decode Content-Type"),
             Error::IncompleteHeaders => write!(f, "failed to read field complete headers"),
             Error::IncompleteStream => write!(f, "incomplete multipart stream"),
             Error::LockFailure => write!(f, "failed to lock multipart state"),
             Error::NoMultipart => write!(f, "Content-Type is not multipart/form-data"),
             Error::NoBoundary => write!(f, "multipart boundary not found in Content-Type"),
             #[cfg(feature = "json")]
-            Error::DecodeJson(e) => write!(f, "failed to decode field data as JSON: {}", e),
+            Error::DecodeJson(_) => write!(f, "failed to decode field data as JSON"),
         }
     }
 }
 
-impl std::error::Error for Error {}
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::ReadHeaderFailed(e) => Some(e),
+            Error::DecodeHeaderName { cause, .. } => Some(cause.as_ref()),
+            Error::DecodeHeaderValue { cause, .. } => Some(cause.as_ref()),
+            Error::StreamReadFailed(e) => Some(e.as_ref()),
+            Error::DecodeContentType(e) => Some(e),
+            #[cfg(feature = "json")]
+            Error::DecodeJson(e) => Some(e),
+            _ => None,
+        }
+    }
+}
 
 impl PartialEq for Error {
     fn eq(&self, other: &Self) -> bool {
