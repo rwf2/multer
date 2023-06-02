@@ -339,7 +339,7 @@ impl Stream for Field<'_> {
 
         let state = &mut *lock;
         if let Err(err) = state.buffer.poll_stream(cx) {
-            return Poll::Ready(Some(Err(crate::Error::StreamReadFailed(err.into()))));
+            return Poll::Ready(Some(Err(err)));
         }
 
         match state

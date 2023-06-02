@@ -251,9 +251,7 @@ impl<'r> Multipart<'r> {
             return Poll::Ready(Ok(None));
         }
 
-        if let Err(err) = state.buffer.poll_stream(cx) {
-            return Poll::Ready(Err(crate::Error::StreamReadFailed(err.into())));
-        }
+        state.buffer.poll_stream(cx)?;
 
         if state.stage == StreamingStage::FindingFirstBoundary {
             let boundary = &state.boundary;
@@ -261,9 +259,7 @@ impl<'r> Multipart<'r> {
             match state.buffer.read_to(boundary_deriv.as_bytes()) {
                 Some(_) => state.stage = StreamingStage::ReadingBoundary,
                 None => {
-                    if let Err(err) = state.buffer.poll_stream(cx) {
-                        return Poll::Ready(Err(crate::Error::StreamReadFailed(err.into())));
-                    }
+                    state.buffer.poll_stream(cx)?;
                     if state.buffer.eof {
                         return Poll::Ready(Err(crate::Error::IncompleteStream));
                     }
