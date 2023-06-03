@@ -112,7 +112,15 @@ impl std::error::Error for Error {
             Error::DecodeContentType(e) => Some(e),
             #[cfg(feature = "json")]
             Error::DecodeJson(e) => Some(e),
-            _ => None,
+            | Error::UnknownField { .. }
+            | Error::IncompleteFieldData { .. }
+            | Error::IncompleteHeaders
+            | Error::IncompleteStream
+            | Error::FieldSizeExceeded { .. }
+            | Error::StreamSizeExceeded { .. }
+            | Error::LockFailure
+            | Error::NoMultipart
+            | Error::NoBoundary => None,
         }
     }
 }
