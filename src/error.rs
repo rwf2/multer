@@ -112,7 +112,7 @@ impl std::error::Error for Error {
             Error::DecodeContentType(e) => Some(e),
             #[cfg(feature = "json")]
             Error::DecodeJson(e) => Some(e),
-            | Error::UnknownField { .. }
+            Error::UnknownField { .. }
             | Error::IncompleteFieldData { .. }
             | Error::IncompleteHeaders
             | Error::IncompleteStream
