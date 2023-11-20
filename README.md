@@ -1,4 +1,4 @@
-[![Github Actions Status](https://github.com/rousan/multer-rs/workflows/Test/badge.svg)](https://github.com/rousan/multer-rs/actions)
+[![GitHub Actions Status](https://github.com/rousan/multer-rs/actions/workflows/test.yml/badge.svg)](https://github.com/rousan/multer-rs/actions)
 [![crates.io](https://img.shields.io/crates/v/multer.svg)](https://crates.io/crates/multer)
 [![Documentation](https://docs.rs/multer/badge.svg)](https://docs.rs/multer)
 [![MIT](https://img.shields.io/crates/l/multer.svg)](./LICENSE)
