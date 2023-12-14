@@ -38,6 +38,7 @@ impl ContentDispositionAttr {
     /// but require them to be percent encoded. Only allocates if percent
     /// decoding, and there are characters that need to be decoded.
     pub fn extract_from<'h>(&self, mut header: &'h [u8]) -> Option<Cow<'h, str>> {
+        // TODO: The prefix should be matched case-insensitively.
         let prefix = match self {
             ContentDispositionAttr::Name => &b"name"[..],
             ContentDispositionAttr::FileName => &b"filename"[..],
