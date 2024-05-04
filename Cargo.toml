@@ -1,9 +1,9 @@
 [package]
 name = "multer"
-version = "3.0.0"
+version = "3.1.0"
 description = "An async parser for `multipart/form-data` content-type in Rust."
-homepage = "https://github.com/rousan/multer-rs"
-repository = "https://github.com/rousan/multer-rs"
+homepage = "https://github.com/rwf2/multer"
+repository = "https://github.com/rwf2/multer"
 keywords = ["multipart", "multipart-formdata", "multipart-uploads", "async", "formdata"]
 categories = ["asynchronous", "web-programming"]
 authors = ["Rousan Ali <hello@rousan.io>"]
