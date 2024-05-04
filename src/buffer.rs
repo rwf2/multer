@@ -95,9 +95,9 @@ impl<'r> StreamBuffer<'r> {
         boundary: &str,
         field_name: Option<&str>,
     ) -> crate::Result<Option<(bool, Bytes)>> {
-        log::trace!("finding next field: {:?}", field_name);
+        trace!("finding next field: {:?}", field_name);
         if self.buf.is_empty() && self.eof {
-            log::trace!("empty buffer && EOF");
+            trace!("empty buffer && EOF");
             return Err(crate::Error::IncompleteFieldData {
                 field_name: field_name.map(|s| s.to_owned()),
             });
@@ -110,7 +110,7 @@ impl<'r> StreamBuffer<'r> {
 
         match memchr::memmem::find(&self.buf, boundary_deriv.as_bytes()) {
             Some(idx) => {
-                log::trace!("new field found at {}", idx);
+                trace!("new field found at {}", idx);
                 let bytes = self.buf.split_to(idx).freeze();
 
                 // discard \r\n.
@@ -119,7 +119,7 @@ impl<'r> StreamBuffer<'r> {
                 Ok(Some((true, bytes)))
             }
             None if self.eof => {
-                log::trace!("no new field found: EOF. terminating");
+                trace!("no new field found: EOF. terminating");
                 Err(crate::Error::IncompleteFieldData {
                     field_name: field_name.map(|s| s.to_owned()),
                 })
@@ -133,7 +133,7 @@ impl<'r> StreamBuffer<'r> {
                     0
                 };
 
-                log::trace!("no new field found, not EOF, checking close");
+                trace!("no new field found, not EOF, checking close");
                 let bytes = &self.buf[rem_boundary_part_idx..];
                 match memchr::memmem::rfind(bytes, constants::CR.as_bytes()) {
                     Some(rel_idx) => {

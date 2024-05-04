@@ -5,6 +5,8 @@
 //! `AsyncRead` reader as a source, so that it can be plugged into any async
 //! Rust environment e.g. any async server.
 //!
+//! To enable trace logging via the `log` crate, enable the `log` feature.
+//!
 //! # Examples
 //!
 //! ```no_run
@@ -124,6 +126,16 @@ pub use error::Error;
 pub use field::Field;
 pub use multipart::Multipart;
 pub use size_limit::SizeLimit;
+
+#[cfg(feature = "log")]
+macro_rules! trace {
+    ($($t:tt)*) => (::log::trace!($($t)*););
+}
+
+#[cfg(not(feature = "log"))]
+macro_rules! trace {
+    ($($t:tt)*) => {};
+}
 
 mod buffer;
 mod constants;
