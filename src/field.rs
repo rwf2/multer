@@ -206,7 +206,7 @@ impl<'r> Field<'r> {
     #[cfg(feature = "json")]
     #[cfg_attr(nightly, doc(cfg(feature = "json")))]
     pub async fn json<T: DeserializeOwned>(self) -> crate::Result<T> {
-        serde_json::from_slice(&self.bytes().await?).map_err(crate::Error::DecodeJson)
+        serde_json::from_slice(&self.bytes().await?).map_err(Error::DecodeJson)
     }
 
     /// Get the full field data as text.
@@ -342,7 +342,7 @@ impl Stream for Field<'_> {
                 state.curr_field_size_counter += bytes.len() as u64;
 
                 if state.curr_field_size_counter > state.curr_field_size_limit {
-                    return Poll::Ready(Some(Err(crate::Error::FieldSizeExceeded {
+                    return Poll::Ready(Some(Err(Error::FieldSizeExceeded {
                         limit: state.curr_field_size_limit,
                         field_name: state.curr_field_name.clone(),
                     })));

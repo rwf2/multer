@@ -123,7 +123,7 @@ impl<'r> Multipart<'r> {
     {
         let stream = stream
             .map_ok(|b| b.into())
-            .map_err(|err| crate::Error::StreamReadFailed(err.into()));
+            .map_err(|err| Error::StreamReadFailed(err.into()));
 
         Multipart {
             state: Arc::new(Mutex::new(MultipartState {
@@ -261,7 +261,7 @@ impl<'r> Multipart<'r> {
                 None => {
                     state.buffer.poll_stream(cx)?;
                     if state.buffer.eof {
-                        return Poll::Ready(Err(crate::Error::IncompleteStream));
+                        return Poll::Ready(Err(Error::IncompleteStream));
                     }
                 }
             }
@@ -277,7 +277,7 @@ impl<'r> Multipart<'r> {
                     state.curr_field_size_counter += bytes.len() as u64;
 
                     if state.curr_field_size_counter > state.curr_field_size_limit {
-                        return Poll::Ready(Err(crate::Error::FieldSizeExceeded {
+                        return Poll::Ready(Err(Error::FieldSizeExceeded {
                             limit: state.curr_field_size_limit,
                             field_name: state.curr_field_name.clone(),
                         }));
@@ -303,7 +303,7 @@ impl<'r> Multipart<'r> {
                 Some(bytes) => bytes,
                 None => {
                     return if state.buffer.eof {
-                        Poll::Ready(Err(crate::Error::IncompleteStream))
+                        Poll::Ready(Err(Error::IncompleteStream))
                     } else {
                         Poll::Pending
                     };
@@ -313,7 +313,7 @@ impl<'r> Multipart<'r> {
             if &boundary_bytes[..] == format!("{}{}", constants::BOUNDARY_EXT, boundary).as_bytes() {
                 state.stage = StreamingStage::DeterminingBoundaryType;
             } else {
-                return Poll::Ready(Err(crate::Error::IncompleteStream));
+                return Poll::Ready(Err(Error::IncompleteStream));
             }
         }
 
@@ -323,7 +323,7 @@ impl<'r> Multipart<'r> {
                 Some(bytes) => bytes,
                 None => {
                     return if state.buffer.eof {
-                        Poll::Ready(Err(crate::Error::IncompleteStream))
+                        Poll::Ready(Err(Error::IncompleteStream))
                     } else {
                         Poll::Pending
                     };
@@ -341,7 +341,7 @@ impl<'r> Multipart<'r> {
         if state.stage == StreamingStage::ReadingTransportPadding {
             if !state.buffer.advance_past_transport_padding() {
                 return if state.buffer.eof {
-                    Poll::Ready(Err(crate::Error::IncompleteStream))
+                    Poll::Ready(Err(Error::IncompleteStream))
                 } else {
                     Poll::Pending
                 };
@@ -352,7 +352,7 @@ impl<'r> Multipart<'r> {
                 Some(bytes) => bytes,
                 None => {
                     return if state.buffer.eof {
-                        Poll::Ready(Err(crate::Error::IncompleteStream))
+                        Poll::Ready(Err(Error::IncompleteStream))
                     } else {
                         Poll::Pending
                     };
@@ -362,7 +362,7 @@ impl<'r> Multipart<'r> {
             if &crlf_bytes[..] == constants::CRLF.as_bytes() {
                 state.stage = StreamingStage::ReadingFieldHeaders;
             } else {
-                return Poll::Ready(Err(crate::Error::IncompleteStream));
+                return Poll::Ready(Err(Error::IncompleteStream));
             }
         }
 
@@ -371,7 +371,7 @@ impl<'r> Multipart<'r> {
                 Some(bytes) => bytes,
                 None => {
                     return if state.buffer.eof {
-                        return Poll::Ready(Err(crate::Error::IncompleteStream));
+                        return Poll::Ready(Err(Error::IncompleteStream));
                     } else {
                         Poll::Pending
                     };
@@ -380,20 +380,19 @@ impl<'r> Multipart<'r> {
 
             let mut headers = [httparse::EMPTY_HEADER; constants::MAX_HEADERS];
 
-            let headers =
-                match httparse::parse_headers(&header_bytes, &mut headers).map_err(crate::Error::ReadHeaderFailed)? {
-                    httparse::Status::Complete((_, raw_headers)) => {
-                        match helpers::convert_raw_headers_to_header_map(raw_headers) {
-                            Ok(headers) => headers,
-                            Err(err) => {
-                                return Poll::Ready(Err(err));
-                            }
+            let headers = match httparse::parse_headers(&header_bytes, &mut headers).map_err(Error::ReadHeaderFailed)? {
+                httparse::Status::Complete((_, raw_headers)) => {
+                    match helpers::convert_raw_headers_to_header_map(raw_headers) {
+                        Ok(headers) => headers,
+                        Err(err) => {
+                            return Poll::Ready(Err(err));
                         }
                     }
-                    httparse::Status::Partial => {
-                        return Poll::Ready(Err(crate::Error::IncompleteHeaders));
-                    }
-                };
+                }
+                httparse::Status::Partial => {
+                    return Poll::Ready(Err(Error::IncompleteHeaders));
+                }
+            };
 
             state.stage = StreamingStage::ReadingFieldData;
 
@@ -412,7 +411,7 @@ impl<'r> Multipart<'r> {
 
             let field_name = content_disposition.field_name.as_deref();
             if !state.constraints.is_it_allowed(field_name) {
-                return Poll::Ready(Err(crate::Error::UnknownField {
+                return Poll::Ready(Err(Error::UnknownField {
                     field_name: field_name.map(str::to_owned),
                 }));
             }
