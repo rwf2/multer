@@ -10,6 +10,7 @@ pub struct SizeLimit {
     pub(crate) whole_stream: u64,
     pub(crate) per_field: u64,
     pub(crate) field_map: HashMap<String, u64>,
+    pub(crate) field_headers: u64
 }
 
 impl SizeLimit {
@@ -28,6 +29,11 @@ impl SizeLimit {
     /// Sets size limit for each field.
     pub fn per_field(mut self, limit: u64) -> SizeLimit {
         self.per_field = limit;
+        self
+    }
+
+    pub fn field_headers(mut self, limit: u64) -> SizeLimit {
+        self.field_headers = limit;
         self
     }
 
@@ -56,6 +62,7 @@ impl Default for SizeLimit {
             whole_stream: constants::DEFAULT_WHOLE_STREAM_SIZE_LIMIT,
             per_field: constants::DEFAULT_PER_FIELD_SIZE_LIMIT,
             field_map: HashMap::default(),
+            field_headers: constants::DEFAULT_FIELD_HEADERS_LIMIT,
         }
     }
 }

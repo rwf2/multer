@@ -367,16 +367,29 @@ impl<'r> Multipart<'r> {
         }
 
         if state.stage == StreamingStage::ReadingFieldHeaders {
+            let headers_limit = state.constraints.size_limit.field_headers;
             let header_bytes = match state.buffer.read_until(constants::CRLF_CRLF.as_bytes()) {
                 Some(bytes) => bytes,
                 None => {
-                    return if state.buffer.eof {
-                        return Poll::Ready(Err(Error::IncompleteStream));
+                    return if state.buffer.buf.len() as u64 > headers_limit {
+                        return Poll::Ready(Err(Error::FieldHeadersSizeExceeded {
+                            limit: headers_limit,
+                            field_idx: state.next_field_idx as u64,
+                        }));
+                    } else if state.buffer.eof {
+                        Poll::Ready(Err(Error::IncompleteStream))
                     } else {
                         Poll::Pending
                     };
                 }
             };
+
+            if header_bytes.len() as u64 > headers_limit {
+                return Poll::Ready(Err(Error::FieldHeadersSizeExceeded {
+                    limit: headers_limit,
+                    field_idx: state.next_field_idx as u64,
+                }));
+            }
 
             let mut headers = [httparse::EMPTY_HEADER; constants::MAX_HEADERS];
 

@@ -31,6 +31,9 @@ pub enum Error {
     IncompleteStream,
 
     /// The incoming field size exceeded the maximum limit.
+    FieldHeadersSizeExceeded { limit: u64, field_idx: u64 },
+
+    /// The incoming field size exceeded the maximum limit.
     FieldSizeExceeded { limit: u64, field_name: Option<String> },
 
     /// The incoming stream size exceeded the maximum limit.
@@ -81,6 +84,9 @@ impl Display for Error {
             Error::DecodeHeaderValue { .. } => {
                 write!(f, "failed to decode field's raw header value")
             }
+            Error::FieldHeadersSizeExceeded { limit, field_idx } => {
+                write!(f, "headers of field #{:?} exceeded the size limit: {} bytes", field_idx, limit)
+            }
             Error::FieldSizeExceeded { limit, field_name } => {
                 let name = field_name.as_deref().unwrap_or("<unknown>");
                 write!(f, "field {:?} exceeded the size limit: {} bytes", name, limit)
@@ -116,6 +122,7 @@ impl std::error::Error for Error {
             | Error::IncompleteFieldData { .. }
             | Error::IncompleteHeaders
             | Error::IncompleteStream
+            | Error::FieldHeadersSizeExceeded { .. }
             | Error::FieldSizeExceeded { .. }
             | Error::StreamSizeExceeded { .. }
             | Error::LockFailure
