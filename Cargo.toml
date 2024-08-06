@@ -11,6 +11,9 @@ readme = "README.md"
 license = "MIT"
 edition = "2018"
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(nightly)'] }
+
 [package.metadata.docs.rs]
 all-features = true
 

@@ -367,45 +367,48 @@ impl<'r> Multipart<'r> {
         }
 
         if state.stage == StreamingStage::ReadingFieldHeaders {
-            let headers_limit = state.constraints.size_limit.field_headers;
+            let per_header_limit = state.constraints.size_limit.per_header;
             let header_bytes = match state.buffer.read_until(constants::CRLF_CRLF.as_bytes()) {
-                Some(bytes) => bytes,
-                None => {
-                    return if state.buffer.buf.len() as u64 > headers_limit {
-                        return Poll::Ready(Err(Error::FieldHeadersSizeExceeded {
-                            limit: headers_limit,
-                            field_idx: state.next_field_idx as u64,
-                        }));
-                    } else if state.buffer.eof {
-                        Poll::Ready(Err(Error::IncompleteStream))
-                    } else {
-                        Poll::Pending
-                    };
+                Some(bytes) if bytes.len() as u64 >= per_header_limit => {
+                    return Poll::Ready(Err(Error::HeaderSizeExceeded {
+                        limit: per_header_limit,
+                        header: None,
+                    }));
                 }
+                None if state.buffer.buf.len() > per_header_limit as usize => {
+                    return Poll::Ready(Err(Error::HeaderSizeExceeded {
+                        limit: per_header_limit,
+                        header: None,
+                    }));
+                }
+                None if state.buffer.eof => return Poll::Ready(Err(Error::IncompleteStream)),
+                Some(bytes) => bytes,
+                None => return Poll::Pending,
             };
 
-            if header_bytes.len() as u64 > headers_limit {
-                return Poll::Ready(Err(Error::FieldHeadersSizeExceeded {
-                    limit: headers_limit,
-                    field_idx: state.next_field_idx as u64,
-                }));
-            }
-
             let mut headers = [httparse::EMPTY_HEADER; constants::MAX_HEADERS];
-
             let headers = match httparse::parse_headers(&header_bytes, &mut headers).map_err(Error::ReadHeaderFailed)? {
                 httparse::Status::Complete((_, raw_headers)) => {
                     match helpers::convert_raw_headers_to_header_map(raw_headers) {
                         Ok(headers) => headers,
-                        Err(err) => {
-                            return Poll::Ready(Err(err));
-                        }
+                        Err(err) => return Poll::Ready(Err(err)),
                     }
                 }
                 httparse::Status::Partial => {
                     return Poll::Ready(Err(Error::IncompleteHeaders));
                 }
             };
+
+            for (name, value) in headers.iter() {
+                if let Some(&limit) = state.constraints.size_limit.header_map.get(name) {
+                    if value.len() as u64 > limit {
+                        return Poll::Ready(Err(Error::HeaderSizeExceeded {
+                            limit: limit,
+                            header: Some((name.clone(), value.len())),
+                        }));
+                    }
+                }
+            }
 
             state.stage = StreamingStage::ReadingFieldData;
 

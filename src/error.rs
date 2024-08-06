@@ -31,10 +31,10 @@ pub enum Error {
     IncompleteStream,
 
     /// The incoming field size exceeded the maximum limit.
-    FieldHeadersSizeExceeded { limit: u64, field_idx: u64 },
-
-    /// The incoming field size exceeded the maximum limit.
     FieldSizeExceeded { limit: u64, field_name: Option<String> },
+
+    /// The incoming header exceeded the maximum limit.
+    HeaderSizeExceeded { limit: u64, header: Option<(http::HeaderName, usize)> },
 
     /// The incoming stream size exceeded the maximum limit.
     StreamSizeExceeded { limit: u64 },
@@ -84,9 +84,6 @@ impl Display for Error {
             Error::DecodeHeaderValue { .. } => {
                 write!(f, "failed to decode field's raw header value")
             }
-            Error::FieldHeadersSizeExceeded { limit, field_idx } => {
-                write!(f, "headers of field #{:?} exceeded the size limit: {} bytes", field_idx, limit)
-            }
             Error::FieldSizeExceeded { limit, field_name } => {
                 let name = field_name.as_deref().unwrap_or("<unknown>");
                 write!(f, "field {:?} exceeded the size limit: {} bytes", name, limit)
@@ -94,6 +91,13 @@ impl Display for Error {
             Error::StreamSizeExceeded { limit } => {
                 write!(f, "stream size exceeded limit: {} bytes", limit)
             }
+            Error::HeaderSizeExceeded { limit, header } => {
+                if let Some((name, n)) = header {
+                    write!(f, "header {name:?} value ({n} bytes) exceeded limit: {limit} bytes")
+                } else {
+                    write!(f, "header exceeded limit: {limit} bytes")
+                }
+            },
             Error::ReadHeaderFailed(_) => write!(f, "failed to read headers"),
             Error::StreamReadFailed(_) => write!(f, "failed to read stream"),
             Error::DecodeContentType(_) => write!(f, "failed to decode Content-Type"),
@@ -122,8 +126,8 @@ impl std::error::Error for Error {
             | Error::IncompleteFieldData { .. }
             | Error::IncompleteHeaders
             | Error::IncompleteStream
-            | Error::FieldHeadersSizeExceeded { .. }
             | Error::FieldSizeExceeded { .. }
+            | Error::HeaderSizeExceeded { .. }
             | Error::StreamSizeExceeded { .. }
             | Error::LockFailure
             | Error::NoMultipart
