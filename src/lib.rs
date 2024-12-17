@@ -175,9 +175,21 @@ pub fn parse_boundary<T: AsRef<str>>(content_type: T) -> Result<String> {
         return Err(Error::NoMultipart);
     }
 
-    m.get_param(mime::BOUNDARY)
-        .map(|name| name.as_str().to_owned())
-        .ok_or(Error::NoBoundary)
+    let mut count = 0;
+    let mut boundary: Option<String> = None;
+    for param in m.params() {
+        if param.0 == mime::BOUNDARY {
+            count += 1;
+            if count == 1 {
+                boundary = Some(param.1.as_str().to_owned());
+                continue;
+            }
+            if count > 1 {
+                return Err(Error::MultipleBoundaries);
+            }
+        }
+    }
+    boundary.ok_or(Error::NoBoundary)
 }
 
 #[cfg(test)]
@@ -191,6 +203,15 @@ mod tests {
 
         let content_type = "multipart/form-data; boundary=------ABCDEFG";
         assert_eq!(parse_boundary(content_type), Ok("------ABCDEFG".to_owned()));
+
+        let content_type = "multipart/form-data; boundary=firstboundary; boundary=secondaryboundary";
+        let boundary = parse_boundary(content_type);
+        assert!(
+            boundary.is_err(),
+            "expected error for invalid boundary, boundary set to {}",
+            boundary.unwrap()
+        );
+        assert_eq!(Error::MultipleBoundaries, boundary.unwrap_err());
 
         let content_type = "boundary=------ABCDEFG";
         assert!(parse_boundary(content_type).is_err());
