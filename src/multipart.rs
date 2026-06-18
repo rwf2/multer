@@ -260,8 +260,12 @@ impl<'r> Multipart<'r> {
                 Some(_) => state.stage = StreamingStage::ReadingBoundary,
                 None => {
                     state.buffer.poll_stream(cx)?;
-                    if state.buffer.eof {
-                        return Poll::Ready(Err(Error::IncompleteStream));
+                    match state.buffer.read_to(boundary_deriv.as_bytes()) {
+                        Some(_) => state.stage = StreamingStage::ReadingBoundary,
+                        None if state.buffer.eof => {
+                            return Poll::Ready(Err(Error::IncompleteStream));
+                        }
+                        None => {}
                     }
                 }
             }
