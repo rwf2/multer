@@ -367,7 +367,12 @@ impl<'r> Multipart<'r> {
         }
 
         if state.stage == StreamingStage::ReadingFieldHeaders {
-            let header_bytes = match state.buffer.read_until(constants::CRLF_CRLF.as_bytes()) {
+            // A part without headers starts with CRLF (RFC 2046 5.1.1).
+            let header_bytes = match state.buffer.peek_exact(constants::CRLF.len()) {
+                Some(bytes) if bytes == constants::CRLF.as_bytes() => state.buffer.read_exact(constants::CRLF.len()),
+                _ => state.buffer.read_until(constants::CRLF_CRLF.as_bytes()),
+            };
+            let header_bytes = match header_bytes {
                 Some(bytes) => bytes,
                 None => {
                     return if state.buffer.eof {
