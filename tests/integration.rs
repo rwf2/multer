@@ -266,3 +266,21 @@ async fn test_multiaccess_caught() {
     assert!(matches!(field2.unwrap_err(), multer::Error::LockFailure));
     assert!(field1.is_ok());
 }
+
+#[tokio::test]
+async fn test_multipart_part_without_headers() {
+    let data = "--X-BOUNDARY\r\n\r\nabcd\r\n--X-BOUNDARY\r\nContent-Type: text/plain\r\n\r\nefgh\r\n--X-BOUNDARY--\r\n";
+    let stream = str_stream(data);
+    let mut m = Multipart::new(stream, "X-BOUNDARY");
+
+    let field = m.next_field().await.unwrap().unwrap();
+    assert!(field.headers().is_empty());
+    assert_eq!(field.name(), None);
+    assert_eq!(field.text().await, Ok("abcd".to_owned()));
+
+    let field = m.next_field().await.unwrap().unwrap();
+    assert_eq!(field.content_type(), Some(&mime::TEXT_PLAIN));
+    assert_eq!(field.text().await, Ok("efgh".to_owned()));
+
+    assert!(m.next_field().await.unwrap().is_none());
+}
