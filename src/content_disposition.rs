@@ -53,14 +53,15 @@ impl ContentDisposition {
                 };
                 (&quoted[..end], escaped, &quoted[end + 1..])
             } else {
-                // Older clients send unquoted values. Preserve their space terminator.
-                let end = memchr::memchr2(b';', b' ', rest).unwrap_or(rest.len());
+                // Older clients send unquoted values followed by whitespace or a semicolon.
+                let end = memchr::memchr3(b';', b' ', b'\t', rest).unwrap_or(rest.len());
                 (&rest[..end], false, &rest[end..])
             };
-            match &key[..key_end] {
-                b"name" if name.is_none() => name = Some((value, escaped)),
-                b"filename" if filename.is_none() => filename = Some((value, escaped)),
-                _ => {}
+            let key = &key[..key_end];
+            if key.eq_ignore_ascii_case(b"name") {
+                name.get_or_insert((value, escaped));
+            } else if key.eq_ignore_ascii_case(b"filename") {
+                filename.get_or_insert((value, escaped));
             }
             if name.is_some() && filename.is_some() {
                 break;

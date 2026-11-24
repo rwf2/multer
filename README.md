@@ -141,7 +141,9 @@ the counters.
 A part beginning with a blank line yields an unnamed field with empty
 headers. Content-Disposition parameters are read in order, so quoted text in
 another parameter cannot supply a field's name or filename. Name-based
-filtering and size limits use the parsed field name.
+filtering and size limits use the parsed field name. The `name` and `filename`
+parameter names are ASCII case-insensitive. Their values preserve case, and an
+unquoted value ends at a space, tab or semicolon.
 
 ## Usage with [hyper.rs](https://hyper.rs/) server
 
