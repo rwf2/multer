@@ -455,7 +455,7 @@ impl MultipartState<'_> {
             if self.buffer.eof {
                 return Poll::Ready(Err(Error::IncompleteStream));
             }
-            ready!(self.buffer.poll_refill(cx, &mut budget)).map_err(|err| self.report(&err))?;
+            ready!(self.buffer.poll_refill(cx, &mut budget, None)).map_err(|err| self.report(&err))?;
         }
     }
 
@@ -464,21 +464,14 @@ impl MultipartState<'_> {
         cx: &mut Context<'_>,
         budget: &mut usize,
     ) -> Poll<Result<(bool, Bytes), ReadError>> {
-        loop {
-            if let Some((done, bytes)) = self.buffer.read_field_data(self.marker.as_bytes()) {
-                self.curr_field_size_counter =
-                    checked_size(self.curr_field_size_counter, bytes.len(), self.curr_field_size_limit)
-                        .ok_or(ReadError::FieldSize)?;
-                if done {
-                    self.stage = StreamingStage::DeterminingBoundaryType;
-                }
-                return Poll::Ready(Ok((done, bytes)));
-            }
-            if self.buffer.eof {
-                return Poll::Ready(Err(ReadError::IncompleteField));
-            }
-            ready!(self.buffer.poll_refill(cx, budget))?;
+        let (done, bytes) = ready!(self.buffer.poll_field_data(cx, budget, self.marker.as_bytes()))?;
+        self.curr_field_size_counter =
+            checked_size(self.curr_field_size_counter, bytes.len(), self.curr_field_size_limit)
+                .ok_or(ReadError::FieldSize)?;
+        if done {
+            self.stage = StreamingStage::DeterminingBoundaryType;
         }
+        Poll::Ready(Ok((done, bytes)))
     }
 
     fn report(&self, error: &ReadError) -> Error {

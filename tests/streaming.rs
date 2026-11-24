@@ -39,14 +39,17 @@ const CLOSE: &[u8] = b"\r\n--B--";
 async fn ready_source_is_polled_only_on_demand() {
     let file: Vec<_> = (0..=255).cycle().take(65536).collect();
     let wire = [FILE_HEAD, &file, CLOSE].concat();
-    for width in [4096, 16384, wire.len()] {
+    for width in [512, 1024, 4096, 16384, wire.len()] {
         let polls = AtomicUsize::new(0);
-        let (tx, source) = channel(&polls);
-        for piece in wire.chunks(width) {
-            tx.send(Ok(Bytes::copy_from_slice(piece))).unwrap();
-        }
-        // A separately supplied epilogue is outside the form.
-        tx.send(Err(ReadFault(42))).unwrap();
+        // Each poll is ready, including the separately supplied epilogue.
+        let mut items = wire
+            .chunks(width)
+            .map(|piece| Ok(Bytes::copy_from_slice(piece)))
+            .chain(std::iter::once(Err(ReadFault(42))));
+        let source = stream::poll_fn(|_| {
+            polls.fetch_add(1, Ordering::Relaxed);
+            std::task::Poll::Ready(items.next())
+        });
         let mut m = Multipart::new(source, "B");
         let mut field = m.next_field().await.unwrap().unwrap();
         assert_eq!(field.file_name(), Some("a.bin"));
@@ -62,6 +65,43 @@ async fn ready_source_is_polled_only_on_demand() {
         assert!(m.next_field().await.unwrap().is_none());
         assert_eq!(polls.load(Ordering::Relaxed), wire.chunks(width).count());
     }
+}
+
+#[tokio::test]
+async fn retain_streamed_chunks_across_fields() {
+    let polls = AtomicUsize::new(0);
+    let (tx, source) = channel(&polls);
+    tx.send(Ok(Bytes::from_static(FILE_HEAD))).unwrap();
+    let mut m = Multipart::new(source, "B");
+    let mut field = m.next_field().await.unwrap().unwrap();
+    let mut expected = Vec::new();
+    let mut held = Vec::new();
+    let mut second = vec![b'b'; 512];
+    second[508..].copy_from_slice(b"\r\n--");
+    let mut third = vec![b'c'; 512];
+    third[0] = b'X'; // The partial marker in the previous item belongs to the payload.
+    for item in [vec![b'a'; 512], second, third] {
+        expected.extend_from_slice(&item);
+        tx.send(Ok(Bytes::from(item))).unwrap();
+        held.push(field.chunk().now_or_never().unwrap().unwrap().unwrap());
+    }
+    assert_eq!(polls.load(Ordering::Relaxed), 4);
+
+    tx.send(Ok(Bytes::from_static(
+        b"\r\n--B\r\nContent-Disposition: form-data; name=next\r\n\r\nend\r\n--B--",
+    )))
+    .unwrap();
+    while let Some(chunk) = field.chunk().await.unwrap() {
+        held.push(chunk);
+    }
+    drop(field);
+    let next = m.next_field().await.unwrap().unwrap();
+    assert_eq!((next.index(), next.name()), (1, Some("next")));
+    assert_eq!(next.bytes().await.unwrap(), "end");
+    assert!(m.next_field().now_or_never().unwrap().unwrap().is_none());
+    assert_eq!(polls.load(Ordering::Relaxed), 5);
+    drop(m);
+    assert_eq!(held.concat(), expected);
 }
 
 #[cfg(feature = "tokio-io")]
@@ -238,9 +278,11 @@ async fn field_and_parent_share_the_original_source_error() {
     let polls = AtomicUsize::new(0);
     let (tx, source) = channel(&polls);
     tx.send(Ok(Bytes::from_static(FILE_HEAD))).unwrap();
+    tx.send(Ok(Bytes::from_static(b"prefix"))).unwrap();
     tx.send(Err(ReadFault(17))).unwrap();
     let mut m = Multipart::new(source, "B");
     let mut field = m.next_field().await.unwrap().unwrap();
+    assert_eq!(field.chunk().await.unwrap().unwrap(), "prefix");
     let field_error = field.chunk().await.unwrap_err();
     assert!(field.chunk().await.unwrap().is_none());
     drop(field);
@@ -257,7 +299,7 @@ async fn field_and_parent_share_the_original_source_error() {
     drop(field_error);
     assert_eq!(Arc::try_unwrap(cause).unwrap().downcast::<ReadFault>().unwrap().0, 17);
     assert!(matches!(m.next_field().await, Err(Error::MultipartFailed)));
-    assert_eq!(polls.load(Ordering::Relaxed), 2);
+    assert_eq!(polls.load(Ordering::Relaxed), 3);
 }
 
 #[tokio::test]
