@@ -57,3 +57,8 @@ version_check = "0.9"
 name = "parse_async_read"
 path = "examples/parse_async_read.rs"
 required-features = ["tokio-io"]
+
+[[bench]]
+name = "small_chunks"
+harness = false
+required-features = ["tokio-io"]

@@ -28,7 +28,7 @@ jobs:
         toolchain: ${{ matrix.rust }}
 
     - name: check
-      run: cargo check --all --bins --examples --all-features
+      run: cargo check --all --bins --examples --benches --all-features
 
     - name: tests
       run: cargo test --all --all-features
