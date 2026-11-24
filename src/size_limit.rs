@@ -55,13 +55,8 @@ impl SizeLimit {
         self
     }
 
-    /// Sets a size limit for the value of a header given its name. This limit
-    /// is applied in addition to the [`per_header`](Self::per_header) limit
-    /// when the header name matches. For repeated names, the last parsed value
-    /// is retained and checked. Use [`per_header`](Self::per_header) to bound the
-    /// raw bytes collected before values are parsed.
-    ///
-    /// An error is returned if the header name is invalid.
+    /// Like [`for_header()`](Self::for_header), limits each parsed value of the
+    /// named header to `limit` bytes. Returns an error if the name is invalid.
     ///
     /// # Examples
     ///
@@ -83,8 +78,12 @@ impl SizeLimit {
         Ok(self)
     }
 
-    /// Exactly the same as [`try_for_header()`](Self::try_for_header) except
-    /// infallible.
+    /// Limits each parsed value of `name` to `limit` bytes. If the header
+    /// occurs more than once in a part, every value must fit. The field's
+    /// header map retains the last value for that name.
+    ///
+    /// Use [`per_header()`](Self::per_header) to bound the raw header section
+    /// as Multer reads it.
     ///
     /// # Examples
     ///

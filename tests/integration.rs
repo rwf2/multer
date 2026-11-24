@@ -372,6 +372,27 @@ async fn test_multipart_constraint_named_header_value_limit_exceeded() {
 }
 
 #[tokio::test]
+async fn repeated_headers_obey_the_named_value_limit() {
+    for (first, last, accepted) in [("red", "tan", true), ("blue", "red", false), ("red", "blue", false)] {
+        let data = format!("--B\r\nX-Tag: {first}\r\nx-tag: {last}\r\n\r\n\r\n--B--");
+        let stream = stream::iter([Ok::<_, Error>(Bytes::from(data))]);
+        let limits = SizeLimit::new().try_for_header("X-Tag", 3).unwrap();
+        let mut m = Multipart::with_constraints(stream, "B", Constraints::new().size_limit(limits));
+
+        if accepted {
+            let field = m.next_field().await.unwrap().unwrap();
+            assert_eq!(field.headers()["x-tag"], last);
+        } else {
+            assert!(matches!(m.next_field().await, Err(Error::HeaderSizeExceeded {
+                limit: 3,
+                header: Some((name, 4)),
+            }) if name == "x-tag"));
+            assert!(matches!(m.next_field().await, Err(Error::MultipartFailed)));
+        }
+    }
+}
+
+#[tokio::test]
 async fn test_multiaccess_caught() {
     let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_file_field\"; filename=\"a-text-file.txt\"\r\nContent-Type: text/plain\r\n\r\nHello world\nHello\r\nWorld\rAgain\r\n--X-BOUNDARY--\r\n";
     let stream = str_stream(data);

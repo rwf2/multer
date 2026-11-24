@@ -154,12 +154,12 @@ of the concrete error.
 
 * `Constraints::max_fields(n)` accepts at most `n` parts, counting empty,
   unnamed, skipped, and rejected parts. The default is unlimited.
-* `SizeLimit::per_header(n)` accepts a header section of at most `n` bytes,
-  including names, values, separators, and the final blank line. The default
-  is `u64::MAX`.
-* To also limit the value of a particular header, use `for_header()` or
-  `try_for_header()`. If the header occurs more than once in a part, Multer
-  keeps and checks the last value.
+* `SizeLimit::per_header(n)` limits the raw header section of each part to
+  `n` bytes, including names, values, separators, and the final blank line.
+  Multer checks this limit as it reads the headers. The default is `u64::MAX`.
+* To limit the parsed value of a particular header, use `for_header()` or
+  `try_for_header()`. If the header occurs more than once in a part, every
+  value must fit. `Field::headers()` contains the last value for that name.
 
 ### Boundaries and Field Names
 

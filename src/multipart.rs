@@ -433,17 +433,7 @@ impl MultipartState<'_> {
                                 httparse::Status::Complete((_, headers)) => headers,
                                 httparse::Status::Partial => return Poll::Ready(Err(Error::IncompleteHeaders)),
                             };
-                        let headers = helpers::convert_raw_headers_to_header_map(raw)?;
-                        for (name, value) in &headers {
-                            if let Some(&limit) = self.constraints.size_limit.header_map.get(name) {
-                                if checked_size(0, value.len(), limit).is_none() {
-                                    return Poll::Ready(Err(Error::HeaderSizeExceeded {
-                                        limit,
-                                        header: Some((name.clone(), value.len())),
-                                    }));
-                                }
-                            }
-                        }
+                        let headers = helpers::convert_headers(raw, &self.constraints.size_limit.header_map)?;
                         buf.advance(end);
                         return Poll::Ready(Ok(Some(headers)));
                     }
