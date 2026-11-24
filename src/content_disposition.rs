@@ -6,6 +6,25 @@ pub(crate) struct ContentDisposition {
     pub(crate) file_name: Option<String>,
 }
 
+fn trim_start(bytes: &[u8]) -> &[u8] {
+    let start = bytes
+        .iter()
+        .position(|b| !b.is_ascii_whitespace())
+        .unwrap_or(bytes.len());
+    &bytes[start..]
+}
+
+fn quoted_end(bytes: &[u8]) -> Option<(usize, bool)> {
+    let mut escaped = false;
+    for i in memchr::memchr_iter(b'"', bytes) {
+        if bytes[..i].iter().rev().take_while(|&&b| b == b'\\').count() % 2 == 0 {
+            return Some((i, escaped));
+        }
+        escaped = true;
+    }
+    None
+}
+
 impl ContentDisposition {
     pub fn parse(headers: &HeaderMap) -> Self {
         headers
@@ -18,33 +37,27 @@ impl ContentDisposition {
         let mut name = None;
         let mut filename = None;
         while let Some(end) = memchr::memchr2(b'=', b';', header) {
-            let key = header[..end].trim_ascii();
+            let key = trim_start(&header[..end]);
+            let key_end = key.iter().rposition(|b| !b.is_ascii_whitespace()).map_or(0, |i| i + 1);
             let separator = header[end];
             header = &header[end + 1..];
             if separator == b';' {
                 continue;
             }
 
-            let rest = header.trim_ascii_start();
+            let rest = trim_start(header);
             let (value, escaped, after) = if let Some(quoted) = rest.strip_prefix(b"\"") {
-                let mut escaped = false;
-                let end = memchr::memchr_iter(b'"', quoted).find(|&i| {
-                    let backslashes = quoted[..i].iter().rev().take_while(|&&b| b == b'\\').count();
-                    if backslashes % 2 == 1 {
-                        escaped = true;
-                        false
-                    } else {
-                        true
-                    }
-                });
-                let Some(end) = end else { break };
+                let (end, escaped) = match quoted_end(quoted) {
+                    Some(pair) => pair,
+                    None => break,
+                };
                 (&quoted[..end], escaped, &quoted[end + 1..])
             } else {
                 // Older clients send unquoted values. Preserve their space terminator.
                 let end = memchr::memchr2(b';', b' ', rest).unwrap_or(rest.len());
                 (&rest[..end], false, &rest[end..])
             };
-            match key {
+            match &key[..key_end] {
                 b"name" if name.is_none() => name = Some((value, escaped)),
                 b"filename" if filename.is_none() => filename = Some((value, escaped)),
                 _ => {}
@@ -52,8 +65,10 @@ impl ContentDisposition {
             if name.is_some() && filename.is_some() {
                 break;
             }
-            let Some(next) = memchr::memchr(b';', after) else { break };
-            header = &after[next + 1..];
+            match memchr::memchr(b';', after) {
+                Some(next) => header = &after[next + 1..],
+                None => break,
+            }
         }
 
         let decode = |(value, escaped): (&[u8], bool)| {

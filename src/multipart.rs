@@ -1,8 +1,9 @@
 use std::sync::Arc;
-use std::task::{ready, Context, Poll};
+use std::task::{Context, Poll};
 
 use bytes::{Buf, Bytes};
 use futures_util::future;
+use futures_util::ready;
 use futures_util::stream::{Stream, TryStreamExt};
 use spin::mutex::spin::SpinMutex as Mutex;
 #[cfg(feature = "tokio-io")]
@@ -497,5 +498,54 @@ impl MultipartState<'_> {
     pub(crate) fn fail_field(&mut self, error: ReadError) -> Error {
         self.fail(Some(Box::new(self.report(&error))));
         self.report(&error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::convert::Infallible;
+
+    use futures_util::stream;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn count_overflow_is_terminal_even_with_default_limits() {
+        let source = stream::iter([Ok::<_, Infallible>(Bytes::from_static(b"--B\r\n"))]);
+        let mut m = Multipart::new(source, "B");
+        m.state.lock().next_field_idx = usize::MAX;
+        assert!(matches!(
+            m.next_field().await,
+            Err(Error::TooManyFields { limit: usize::MAX })
+        ));
+        assert!(matches!(m.next_field().await, Err(Error::MultipartFailed)));
+    }
+
+    #[tokio::test]
+    async fn field_counter_checks_overflow_with_a_buffered_close() {
+        for skip in [false, true] {
+            let source = stream::iter([Ok::<_, Infallible>(Bytes::from_static(b"--B\r\n\r\nx\r\n--B--"))]);
+            let mut m = Multipart::new(source, "B");
+            let mut field = m.next_field().await.unwrap().unwrap();
+            m.state.lock().curr_field_size_counter = u64::MAX;
+            if !skip {
+                assert!(matches!(
+                    field.chunk().await,
+                    Err(Error::FieldSizeExceeded {
+                        limit: u64::MAX,
+                        field_name: None
+                    })
+                ));
+            }
+            drop(field);
+            assert!(matches!(
+                m.next_field().await,
+                Err(Error::FieldSizeExceeded {
+                    limit: u64::MAX,
+                    field_name: None
+                })
+            ));
+            assert!(matches!(m.next_field().await, Err(Error::MultipartFailed)));
+        }
     }
 }

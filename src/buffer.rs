@@ -1,9 +1,10 @@
 use std::fmt;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{ready, Context, Poll};
+use std::task::{Context, Poll};
 
 use bytes::{Buf, Bytes, BytesMut};
+use futures_util::ready;
 use futures_util::stream::Stream;
 #[cfg(feature = "tokio-io")]
 use {bytes::BufMut, tokio::io::AsyncRead, tokio_util::io::poll_read_buf};
@@ -130,5 +131,25 @@ impl<'r> StreamBuffer<'r> {
 impl fmt::Debug for StreamBuffer<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("StreamBuffer").finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn whole_stream_counter_accepts_max_and_rejects_overflow() {
+        let source = futures_util::stream::iter([Ok(Bytes::from_static(b"a")), Ok(Bytes::from_static(b"b"))]);
+        let mut buffer = StreamBuffer::new(Input::Stream(Box::pin(source)), u64::MAX);
+        buffer.stream_size = u64::MAX - 1;
+        let mut cx = Context::from_waker(futures_util::task::noop_waker_ref());
+        let mut budget = REFILLS_PER_POLL;
+        assert!(matches!(buffer.poll_refill(&mut cx, &mut budget), Poll::Ready(Ok(()))));
+        assert_eq!(buffer.stream_size, u64::MAX);
+        assert!(matches!(
+            buffer.poll_refill(&mut cx, &mut budget),
+            Poll::Ready(Err(ReadError::StreamSize))
+        ));
     }
 }
