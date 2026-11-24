@@ -104,6 +104,30 @@ async fn retain_streamed_chunks_across_fields() {
     assert_eq!(held.concat(), expected);
 }
 
+#[tokio::test]
+async fn chunks_from_an_oversized_item_release_its_backing() {
+    let item = Bytes::from(vec![b'x'; 64 * 1024 + 5]);
+    let source = stream::iter([
+        Ok::<_, Infallible>(Bytes::from_static(FILE_HEAD)),
+        Ok(item.clone()),
+        Ok(Bytes::from_static(CLOSE)),
+    ]);
+    let mut m = Multipart::new(source, "B");
+    let mut field = m.next_field().await.unwrap().unwrap();
+    let mut held = Vec::new();
+    while let Some(chunk) = field.chunk().await.unwrap() {
+        if !chunk.is_empty() {
+            // Keep the original allocation live so its address cannot be reused.
+            assert!(!item.as_ptr_range().contains(&chunk.as_ptr()));
+            held.push(chunk);
+        }
+    }
+    drop(field);
+    assert!(m.next_field().await.unwrap().is_none());
+    drop(m);
+    assert_eq!(held.concat(), item);
+}
+
 #[cfg(feature = "tokio-io")]
 #[tokio::test]
 async fn reader_returns_buffered_field_and_body_after_one_bounded_read() {

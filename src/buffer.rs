@@ -69,7 +69,7 @@ impl<'r> StreamBuffer<'r> {
 
         match &mut self.input {
             Input::Stream(stream) => {
-                let mut item = if self.remainder.is_empty() {
+                if self.remainder.is_empty() {
                     let item = match ready!(stream.as_mut().poll_next(cx)) {
                         Some(Ok(item)) => item,
                         Some(Err(err)) => return Poll::Ready(Err(ReadError::Source(Arc::new(err)))),
@@ -80,23 +80,26 @@ impl<'r> StreamBuffer<'r> {
                     };
                     self.stream_size = checked_size(self.stream_size, item.len(), self.stream_size_limit)
                         .ok_or(ReadError::StreamSize)?;
-                    item
-                } else {
-                    std::mem::take(&mut self.remainder)
-                };
-
-                if item.len() > REFILL_BYTES {
-                    self.remainder = item.split_off(REFILL_BYTES);
-                }
-                if let Some(marker) = marker {
-                    if self.buf.is_empty()
-                        && !item.is_empty()
-                        && payload_span(&item, marker, &self.marker_start).0 == item.len()
-                    {
-                        return Poll::Ready(Ok(Some(item)));
+                    if let Some(marker) = marker {
+                        if self.buf.is_empty()
+                            && !item.is_empty()
+                            && item.len() <= REFILL_BYTES
+                            && payload_span(&item, marker, &self.marker_start).0 == item.len()
+                        {
+                            return Poll::Ready(Ok(Some(item)));
+                        }
                     }
+                    self.remainder = item;
                 }
-                self.buf.extend_from_slice(&item);
+
+                // A returned chunk must not keep a known oversized item alive.
+                let len = self.remainder.len().min(REFILL_BYTES);
+                self.buf.extend_from_slice(&self.remainder[..len]);
+                if len == self.remainder.len() {
+                    self.remainder = Bytes::new();
+                } else {
+                    self.remainder.advance(len);
+                }
                 Poll::Ready(Ok(None))
             }
             #[cfg(feature = "tokio-io")]

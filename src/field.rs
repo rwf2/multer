@@ -163,6 +163,10 @@ impl<'r> Field<'r> {
     /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
     /// ```
     ///
+    /// A chunk can be a complete input `Bytes` item. Retaining it also retains
+    /// any backing allocation that the source already shares with other items.
+    /// Multer copies bounded slices of oversized items into its own buffer.
+    ///
     /// A terminal read error is returned once and ends this field stream. After
     /// the field is dropped, the parent reports the same typed cause once.
     pub async fn chunk(&mut self) -> crate::Result<Option<Bytes>> {
