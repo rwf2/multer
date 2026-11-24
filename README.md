@@ -108,51 +108,85 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Migrating from 3.1
 
-Fields and payload chunks can arrive earlier in 4.0. A later call can report a
-source or size error after a payload prefix has been delivered. Consume each
-field as a stream and drive `next_field()` through `Ok(None)` to confirm the
-entire form. A fetched stream item counts in full toward `whole_stream`,
-including its epilogue. The closing boundary completes parsing immediately.
+### Reading Fields
 
-A field reports a terminal read error once and then ends. Drop the field to
-receive the same typed error from its parent. After the parent reports a
-terminal error, further calls return `Error::MultipartFailed`. A live-field
-`LockFailure`, an `UnknownField` rejection and a JSON conversion error after a
-complete body still allow iteration to continue.
+`next_field()` now returns a field as soon as its headers are complete.
+`field.chunk()` can return part of a file before a later read fails or exceeds
+a size limit. To check that the entire form was read successfully, continue
+calling `next_field()` until it returns `Ok(None)`.
 
-`Error::StreamReadFailed(cause)` now holds an
-`Arc<Box<dyn std::error::Error + Send + Sync>>`. Both
-`cause.downcast_ref::<T>()` and a downcast through Multer's `Error::source()`
-reach the original error. Move the handle or use `Arc::clone(&cause)` to keep
-it. To recover ownership, call `Arc::try_unwrap(cause)`, then
-`boxed.downcast::<T>()`. While another report holds the cause, `try_unwrap`
-returns that handle in `Err`. The parser releases its report when the parent
-takes it or the shared state is dropped. To construct a stream error from an
-existing boxed cause, use `Error::StreamReadFailed(Arc::new(boxed))`.
+Multer stops reading at the closing boundary. `SizeLimit::whole_stream()`
+counts the entire input chunk containing that boundary, including any bytes
+that follow it.
 
-`Constraints::max_fields(n)` admits up to `n` parts, including empty,
-unnamed, rejected and skipped parts. Configure `SizeLimit::per_header(n)` to
-bound the raw header section of each part, including separators and its final
-blank line. A section exactly at the limit is accepted. `for_header` and
-`try_for_header` separately limit the retained parsed value for a named
-header. The default permits any part count and header size representable by
-the counters.
+If the input fails, ends before the field is complete, or exceeds a size
+limit, `field.chunk()` returns the error once, then `Ok(None)`. After you drop
+the field, `next_field()` returns the same error. Once `next_field()` reports
+a terminal error, later calls return `Error::MultipartFailed`.
+
+You can still read the next field after `Error::UnknownField` or a JSON
+decoding error from `Field::json()`. If you get `Error::LockFailure` because
+you still hold the previous field, drop it and call `next_field()` again.
+
+### Stream Errors
+
+The field and `Multipart` now share the cause of `Error::StreamReadFailed`.
+If you construct this error from a `Box<dyn std::error::Error + Send + Sync>`,
+wrap the box in an `Arc`.
+
+```diff
+- Error::StreamReadFailed(boxed)
++ Error::StreamReadFailed(std::sync::Arc::new(boxed))
+```
+
+When matching `Error::StreamReadFailed(cause)`, use `cause.downcast_ref::<T>()`
+to borrow the original error. Calling `source()` on the `multer::Error` also
+returns a reference to it. Move `cause` to keep it or use `Arc::clone(&cause)`
+to share it.
+
+`Arc::try_unwrap(cause)` returns the original box when you hold the last
+`Arc`, or `Err(cause)` if the error is still shared. After a field read error,
+`Multipart` holds an `Arc` until `next_field()` returns the error or you drop
+the parser. Call `boxed.downcast::<T>()` on the recovered box to take ownership
+of the concrete error.
+
+### Field and Header Limits
+
+* `Constraints::max_fields(n)` accepts at most `n` parts, counting empty,
+  unnamed, skipped, and rejected parts. The default is unlimited.
+* `SizeLimit::per_header(n)` accepts a header section of at most `n` bytes,
+  including names, values, separators, and the final blank line. The default
+  is `u64::MAX`.
+* To also limit the value of a particular header, use `for_header()` or
+  `try_for_header()`. If the header occurs more than once in a part, Multer
+  keeps and checks the last value.
+
+### Boundaries and Field Names
 
 In 3.1, `parse_boundary()` used the first `boundary` parameter in
-`Content-Type`. In 4.0, it returns `Error::MultipleBoundaries` if the
-parameter occurs more than once, even when the values are identical.
+`Content-Type`. It now returns `Error::MultipleBoundaries` if the parameter
+appears more than once, even when the values are identical.
 
-The opening boundary must start at byte zero or immediately after a CRLF.
-Multer skips boundary-like text elsewhere in the preamble. Reaching transport EOF without
-a marker at a line start produces `Error::IncompleteStream`. A correctly
-positioned closing marker still completes an empty form.
+The opening boundary must appear at the start of the input or immediately
+after `\r\n`. Multer skips a boundary mentioned in the middle of a line. If
+it reaches the end of the input without finding an opening boundary,
+`next_field()` returns `Error::IncompleteStream`. For a boundary of `B`, a
+body containing only `--B--` is a complete, empty form.
 
-A part beginning with a blank line yields an unnamed field with empty
-headers. Content-Disposition parameters are read in order, so quoted text in
-another parameter cannot supply a field's name or filename. Name-based
-filtering and size limits use the parsed field name. The `name` and `filename`
-parameter names are ASCII case-insensitive. Their values preserve case, and an
-unquoted value ends at a space, tab or semicolon.
+A part that begins with a blank line has no headers. Multer returns it as an
+unnamed field with its own body.
+
+Multer uses the first `name` and `filename` parameters in `Content-Disposition`.
+It ignores ASCII case in parameter names and preserves case in their values.
+An unquoted value ends at a space, tab, or semicolon.
+
+```http
+Content-Disposition: form-data; note="a name=x"; Name=Invoice; FileName=Memo.txt
+```
+
+Here, `field.name()` returns `Some("Invoice")` and `field.file_name()` returns
+`Some("Memo.txt")`. The text `name=x` is part of the quoted `note` value.
+Both `allowed_fields()` and `for_field()` use the name `"Invoice"`.
 
 ## Usage with [hyper.rs](https://hyper.rs/) server
 
