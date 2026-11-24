@@ -138,6 +138,10 @@ blank line. A section exactly at the limit is accepted. `for_header` and
 header. The default permits any part count and header size representable by
 the counters.
 
+In 3.1, `parse_boundary()` used the first `boundary` parameter in
+`Content-Type`. In 4.0, it returns `Error::MultipleBoundaries` if the
+parameter occurs more than once, even when the values are identical.
+
 The opening boundary must start at byte zero or immediately after a CRLF.
 Multer skips boundary-like text elsewhere in the preamble. Reaching transport EOF without
 a marker at a line start produces `Error::IncompleteStream`. A correctly

@@ -150,7 +150,10 @@ mod size_limit;
 /// A Result type often returned from methods that can have `multer` errors.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
-/// Parses the `Content-Type` header to extract the boundary value.
+/// Parses a `multipart/form-data` `Content-Type` header and returns its boundary.
+///
+/// A missing `boundary` parameter yields [`Error::NoBoundary`]. Repeating the
+/// parameter yields [`Error::MultipleBoundaries`], even if the values are identical.
 ///
 /// # Examples
 ///
@@ -175,9 +178,13 @@ pub fn parse_boundary<T: AsRef<str>>(content_type: T) -> Result<String> {
         return Err(Error::NoMultipart);
     }
 
-    m.get_param(mime::BOUNDARY)
-        .map(|name| name.as_str().to_owned())
-        .ok_or(Error::NoBoundary)
+    let mut boundaries = m.params().filter(|(name, _)| *name == mime::BOUNDARY);
+    let (_, boundary) = boundaries.next().ok_or(Error::NoBoundary)?;
+    if boundaries.next().is_some() {
+        return Err(Error::MultipleBoundaries);
+    }
+
+    Ok(boundary.as_str().to_owned())
 }
 
 #[cfg(test)]
@@ -192,13 +199,29 @@ mod tests {
         let content_type = "multipart/form-data; boundary=------ABCDEFG";
         assert_eq!(parse_boundary(content_type), Ok("------ABCDEFG".to_owned()));
 
+        let content_type = r#"multipart/form-data; note="x; boundary=other"; BOUNDARY="Aa:B9""#;
+        assert_eq!(parse_boundary(content_type).unwrap(), "Aa:B9");
+
+        for content_type in [
+            "multipart/form-data; boundary=a; boundary=b",
+            "multipart/form-data; boundary=a; boundary=a",
+            r#"multipart/form-data; boundary=a; charset=utf-8; BOUNDARY="a""#,
+        ] {
+            assert!(matches!(parse_boundary(content_type), Err(Error::MultipleBoundaries)));
+        }
+
+        let content_type = "multipart/form-data; charset=utf-8";
+        assert!(matches!(parse_boundary(content_type), Err(Error::NoBoundary)));
+
         let content_type = "boundary=------ABCDEFG";
-        assert!(parse_boundary(content_type).is_err());
+        assert!(matches!(parse_boundary(content_type), Err(Error::DecodeContentType(_))));
 
-        let content_type = "text/plain";
-        assert!(parse_boundary(content_type).is_err());
-
-        let content_type = "text/plain; boundary=------ABCDEFG";
-        assert!(parse_boundary(content_type).is_err());
+        for content_type in [
+            "text/plain",
+            "text/plain; boundary=------ABCDEFG",
+            "text/plain; boundary=a; boundary=b",
+        ] {
+            assert!(matches!(parse_boundary(content_type), Err(Error::NoMultipart)));
+        }
     }
 }
