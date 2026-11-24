@@ -1,6 +1,6 @@
 //! Run with `cargo bench --features tokio-io --bench small_chunks`.
 //! For a release comparison, alternate the same benchmark on both revisions.
-//! Group results by adapter and chunk size and compare throughput within each pair.
+//! Compare throughput within each pair for each payload, adapter and chunk size.
 
 use std::convert::Infallible;
 use std::pin::Pin;
@@ -31,7 +31,7 @@ impl AsyncRead for Reader<'_> {
     }
 }
 
-async fn read_form(mut form: Multipart<'_>) {
+async fn read_form(mut form: Multipart<'_>, expected_sum: u64) {
     let mut field = form.next_field().await.unwrap().unwrap();
     assert_eq!(field.name(), Some("upload"));
     assert_eq!(field.file_name(), Some("ordinary.bin"));
@@ -42,56 +42,74 @@ async fn read_form(mut form: Multipart<'_>) {
         sum += chunk.iter().map(|&byte| u64::from(byte)).sum::<u64>();
     }
     assert_eq!(len, PAYLOAD_LEN);
-    assert_eq!(sum, (PAYLOAD_LEN / 256) as u64 * (0..=255u64).sum::<u64>());
+    assert_eq!(sum, expected_sum);
     drop(field);
     assert!(form.next_field().await.unwrap().is_none());
 }
 
-async fn measure<'r>(adapter: &str, chunk_size: usize, make_form: impl Fn() -> Multipart<'r>) {
+async fn measure<'r>(make_form: impl Fn() -> Multipart<'r>, expected_sum: u64) -> f64 {
     for _ in 0..50 {
-        read_form(make_form()).await;
+        read_form(make_form(), expected_sum).await;
     }
 
     let start = Instant::now();
     for _ in 0..ITERATIONS {
-        read_form(make_form()).await;
+        read_form(make_form(), expected_sum).await;
     }
 
-    let ns_per_form = start.elapsed().as_nanos() as f64 / ITERATIONS as f64;
-    println!("{adapter},{chunk_size},{ITERATIONS},{ns_per_form:.1}");
+    start.elapsed().as_nanos() as f64 / ITERATIONS as f64
 }
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
+async fn benchmark_payload(label: &str, tile: &[u8]) {
     let mut wire = format!(
         "--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"upload\"; filename=\"ordinary.bin\"\r\n\
          Content-Type: application/octet-stream\r\n\r\n"
     )
     .into_bytes();
-    wire.extend((0..=u8::MAX).cycle().take(PAYLOAD_LEN));
+    let payload = tile.iter().copied().cycle().take(PAYLOAD_LEN);
+    let expected_sum = payload.clone().map(u64::from).sum();
+    wire.extend(payload);
     wire.extend_from_slice(format!("\r\n--{BOUNDARY}--\r\n").as_bytes());
     let wire = Bytes::from(wire);
 
-    println!("adapter,chunk_bytes,forms,ns_per_form");
     for chunk_size in [512, 1024] {
         let items: Vec<_> = (0..wire.len())
             .step_by(chunk_size)
             .map(|i| wire.slice(i..(i + chunk_size).min(wire.len())))
             .collect();
-        measure("stream", chunk_size, || {
-            let source = stream::iter(items.iter().cloned().map(Ok::<_, Infallible>));
-            Multipart::new(source, BOUNDARY)
-        })
+        let ns = measure(
+            || {
+                let source = stream::iter(items.iter().cloned().map(Ok::<_, Infallible>));
+                Multipart::new(source, BOUNDARY)
+            },
+            expected_sum,
+        )
         .await;
-        measure("reader", chunk_size, || {
-            Multipart::with_reader(
-                Reader {
-                    data: &wire,
-                    chunk_size,
-                },
-                BOUNDARY,
-            )
-        })
+        println!("{label},stream,{chunk_size},{ITERATIONS},{ns:.1}");
+        let ns = measure(
+            || {
+                Multipart::with_reader(
+                    Reader {
+                        data: &wire,
+                        chunk_size,
+                    },
+                    BOUNDARY,
+                )
+            },
+            expected_sum,
+        )
         .await;
+        println!("{label},reader,{chunk_size},{ITERATIONS},{ns:.1}");
     }
+}
+
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
+    let binary: Vec<_> = (0..=u8::MAX).collect();
+    let mut text =
+        b"An ordinary report line with a value and a date. The next line is part of the same file.\r\n".repeat(18);
+    text.extend_from_slice(b"\r\n--------------------\r\nReport section two\r\n");
+    println!("payload,adapter,chunk_bytes,forms,ns_per_form");
+    benchmark_payload("binary", &binary).await;
+    benchmark_payload("text", &text).await;
 }
