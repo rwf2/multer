@@ -390,3 +390,24 @@ async fn test_multiaccess_caught() {
     assert_eq!(next.text().await.unwrap(), "Hello world\nHello\r\nWorld\rAgain");
     assert!(m.next_field().await.unwrap().is_none());
 }
+
+#[tokio::test]
+async fn disposition_parameters_select_field_policy() {
+    let value = r#"form-data; note="some; name=other; filename=sample"; name=label; filename="real.txt""#;
+    let data = format!("--B\r\nContent-Disposition: {value}\r\n\r\nabc\r\n--B--");
+    for limit in [2, 3] {
+        let constraints = Constraints::new()
+            .allowed_fields(vec!["label"])
+            .size_limit(SizeLimit::new().per_field(0).for_field("label", limit));
+        let mut m = Multipart::with_constraints(stream::iter([Ok::<_, Error>(data.clone())]), "B", constraints);
+        let field = m.next_field().await.unwrap().unwrap();
+        assert_eq!((field.name(), field.file_name()), (Some("label"), Some("real.txt")));
+        assert_eq!(field.headers()["content-disposition"].as_bytes(), value.as_bytes());
+        match limit {
+            3 => assert_eq!(field.text().await.unwrap(), "abc"),
+            _ => assert!(
+                matches!(field.bytes().await, Err(Error::FieldSizeExceeded { limit: 2, field_name }) if field_name.as_deref() == Some("label"))
+            ),
+        }
+    }
+}
