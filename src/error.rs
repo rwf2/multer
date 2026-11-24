@@ -1,6 +1,8 @@
 use std::fmt::{self, Debug, Display, Formatter};
 
-type BoxError = Box<dyn std::error::Error + Send + Sync>;
+use std::sync::Arc;
+
+pub(crate) type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 /// A set of errors that can occur during parsing multipart stream and in other
 /// operations.
@@ -34,13 +36,24 @@ pub enum Error {
     FieldSizeExceeded { limit: u64, field_name: Option<String> },
 
     /// The incoming header exceeded the maximum limit.
-    HeaderSizeExceeded { limit: u64, header: Option<(http::HeaderName, usize)> },
+    HeaderSizeExceeded {
+        limit: u64,
+        header: Option<(http::HeaderName, usize)>,
+    },
 
     /// The incoming stream size exceeded the maximum limit.
     StreamSizeExceeded { limit: u64 },
 
-    /// Stream read failed.
-    StreamReadFailed(BoxError),
+    /// The source failed. Both reports of a field read failure share its original boxed error.
+    /// Use `cause.downcast_ref::<T>()` to inspect it, or [`Arc::try_unwrap`] to recover the box
+    /// once the other report and the parser's retained handle have been dropped or consumed.
+    StreamReadFailed(Arc<BoxError>),
+
+    /// A previous terminal error has already been reported by this parser.
+    MultipartFailed,
+
+    /// The number of parts exceeded the configured maximum.
+    TooManyFields { limit: usize },
 
     /// Failed to lock the multipart shared state for any changes.
     LockFailure,
@@ -97,8 +110,10 @@ impl Display for Error {
                 } else {
                     write!(f, "header exceeded limit: {limit} bytes")
                 }
-            },
+            }
             Error::ReadHeaderFailed(_) => write!(f, "failed to read headers"),
+            Error::MultipartFailed => write!(f, "multipart parsing has already failed"),
+            Error::TooManyFields { limit } => write!(f, "multipart field count exceeded limit: {limit}"),
             Error::StreamReadFailed(_) => write!(f, "failed to read stream"),
             Error::DecodeContentType(_) => write!(f, "failed to decode Content-Type"),
             Error::IncompleteHeaders => write!(f, "failed to read field complete headers"),
@@ -118,7 +133,7 @@ impl std::error::Error for Error {
             Error::ReadHeaderFailed(e) => Some(e),
             Error::DecodeHeaderName { cause, .. } => Some(cause.as_ref()),
             Error::DecodeHeaderValue { cause, .. } => Some(cause.as_ref()),
-            Error::StreamReadFailed(e) => Some(e.as_ref()),
+            Error::StreamReadFailed(e) => Some(e.as_ref().as_ref()),
             Error::DecodeContentType(e) => Some(e),
             #[cfg(feature = "json")]
             Error::DecodeJson(e) => Some(e),
@@ -129,6 +144,8 @@ impl std::error::Error for Error {
             | Error::FieldSizeExceeded { .. }
             | Error::HeaderSizeExceeded { .. }
             | Error::StreamSizeExceeded { .. }
+            | Error::MultipartFailed
+            | Error::TooManyFields { .. }
             | Error::LockFailure
             | Error::NoMultipart
             | Error::NoBoundary => None,

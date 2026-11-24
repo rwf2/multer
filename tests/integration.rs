@@ -1,6 +1,6 @@
 use bytes::Bytes;
-use futures_util::{stream, Stream};
-use multer::{Constraints, Multipart, SizeLimit, Error};
+use futures_util::{stream, Stream, StreamExt};
+use multer::{Constraints, Error, Multipart, SizeLimit};
 
 fn str_stream(string: &'static str) -> impl Stream<Item = multer::Result<Bytes>> {
     stream::iter(
@@ -112,16 +112,17 @@ async fn test_multipart_constraint_allowed_fields_normal() {
 }
 
 #[tokio::test]
-#[should_panic]
 async fn test_multipart_constraint_allowed_fields_unknown_field() {
-    let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_file_field\"; filename=\"a-text-file.txt\"\r\nContent-Type: text/plain\r\n\r\nHello world\nHello\r\nWorld\rAgain\r\n--X-BOUNDARY--\r\n";
-    let stream = str_stream(data);
-
-    let constraints = Constraints::new().allowed_fields(vec!["my_text_field"]);
-    let mut m = Multipart::with_constraints(stream, "X-BOUNDARY", constraints);
-
-    assert!(m.next_field().await.unwrap().is_some());
-    assert!(m.next_field().await.unwrap().is_some());
+    let data = "--B\r\nContent-Disposition: form-data; name=a\r\n\r\nfirst\r\n--B\r\nContent-Disposition: form-data; name=b\r\n\r\nsecond\r\n--B\r\nContent-Disposition: form-data; name=a\r\n\r\nlast\r\n--B--";
+    let constraints = Constraints::new().allowed_fields(vec!["a"]).max_fields(3);
+    let mut m = Multipart::with_constraints(str_stream(data), "B", constraints);
+    assert_eq!(m.next_field().await.unwrap().unwrap().text().await.unwrap(), "first");
+    assert!(
+        matches!(m.next_field().await, Err(Error::UnknownField { field_name }) if field_name.as_deref() == Some("b"))
+    );
+    let field = m.next_field().await.unwrap().unwrap();
+    assert_eq!((field.index(), field.name()), (2, Some("a")));
+    assert_eq!(field.text().await.unwrap(), "last");
     assert!(m.next_field().await.unwrap().is_none());
 }
 
@@ -147,7 +148,6 @@ async fn test_multipart_constraint_size_limit_whole_stream() {
 }
 
 #[tokio::test]
-#[should_panic]
 async fn test_multipart_constraint_size_limit_whole_stream_size_exceeded() {
     let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_file_field\"; filename=\"a-text-file.txt\"\r\nContent-Type: text/plain\r\n\r\nHello world\nHello\r\nWorld\rAgain\r\n--X-BOUNDARY--\r\n";
     let stream = str_stream(data);
@@ -158,9 +158,15 @@ async fn test_multipart_constraint_size_limit_whole_stream_size_exceeded() {
 
     let mut m = Multipart::with_constraints(stream, "X-BOUNDARY", constraints);
 
-    assert!(m.next_field().await.unwrap().is_some());
-    assert!(m.next_field().await.unwrap().is_some());
-    assert!(m.next_field().await.unwrap().is_none());
+    let error = loop {
+        match m.next_field().await {
+            Ok(Some(_)) => continue,
+            Ok(None) => panic!("expected a size-limit error"),
+            Err(err) => break err,
+        }
+    };
+    assert!(matches!(error, Error::StreamSizeExceeded { limit: 100 }));
+    assert!(matches!(m.next_field().await, Err(Error::MultipartFailed)));
 }
 
 #[tokio::test]
@@ -185,7 +191,6 @@ async fn test_multipart_constraint_size_limit_per_field() {
 }
 
 #[tokio::test]
-#[should_panic]
 async fn test_multipart_constraint_size_limit_per_field_size_exceeded() {
     let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_file_field\"; filename=\"a-text-file.txt\"\r\nContent-Type: text/plain\r\n\r\nHello world\nHello\r\nWorld\rAgain\r\n--X-BOUNDARY--\r\n";
     let stream = str_stream(data);
@@ -196,9 +201,17 @@ async fn test_multipart_constraint_size_limit_per_field_size_exceeded() {
 
     let mut m = Multipart::with_constraints(stream, "X-BOUNDARY", constraints);
 
-    assert!(m.next_field().await.unwrap().is_some());
-    assert!(m.next_field().await.unwrap().is_some());
-    assert!(m.next_field().await.unwrap().is_none());
+    let error = loop {
+        match m.next_field().await {
+            Ok(Some(_)) => continue,
+            Ok(None) => panic!("expected a size-limit error"),
+            Err(err) => break err,
+        }
+    };
+    assert!(
+        matches!(error, Error::FieldSizeExceeded { limit: 10, field_name } if field_name.as_deref() == Some("my_file_field"))
+    );
+    assert!(matches!(m.next_field().await, Err(Error::MultipartFailed)));
 }
 
 #[tokio::test]
@@ -229,7 +242,6 @@ async fn test_multipart_constraint_size_limit_for_field() {
 }
 
 #[tokio::test]
-#[should_panic]
 async fn test_multipart_constraint_size_limit_for_field_size_exceeded() {
     let data = "--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_text_field\"\r\n\r\nabcd\r\n--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"my_file_field\"; filename=\"a-text-file.txt\"\r\nContent-Type: text/plain\r\n\r\nHello world\nHello\r\nWorld\rAgain\r\n--X-BOUNDARY--\r\n";
     let stream = str_stream(data);
@@ -246,9 +258,17 @@ async fn test_multipart_constraint_size_limit_for_field_size_exceeded() {
 
     let mut m = Multipart::with_constraints(stream, "X-BOUNDARY", constraints);
 
-    assert!(m.next_field().await.unwrap().is_some());
-    assert!(m.next_field().await.unwrap().is_some());
-    assert!(m.next_field().await.unwrap().is_none());
+    let error = loop {
+        match m.next_field().await {
+            Ok(Some(_)) => continue,
+            Ok(None) => panic!("expected a size-limit error"),
+            Err(err) => break err,
+        }
+    };
+    assert!(
+        matches!(error, Error::FieldSizeExceeded { limit: 10, field_name } if field_name.as_deref() == Some("my_file_field"))
+    );
+    assert!(matches!(m.next_field().await, Err(Error::MultipartFailed)));
 }
 
 #[tokio::test]
@@ -284,13 +304,13 @@ async fn test_multipart_constraint_size_limit_field_headers_exceeded() {
     let mut m = Multipart::with_constraints(stream, "X-BOUNDARY", constraints);
 
     assert!(m.next_field().await.unwrap().is_some());
-    assert_eq!(
-        m.next_field().await.err(),
-        Some(Error::HeaderSizeExceeded {
+    assert!(matches!(
+        m.next_field().await,
+        Err(Error::HeaderSizeExceeded {
             limit: 60,
-            header: None,
+            header: None
         })
-    );
+    ));
 }
 
 #[tokio::test]
@@ -300,7 +320,8 @@ async fn test_multipart_constraint_named_header_value_limit_exceeded() {
     let limits = SizeLimit::new()
         .whole_stream(248)
         .per_header(150)
-        .try_for_header("Content-Disposition", 59).unwrap()
+        .try_for_header("Content-Disposition", 59)
+        .unwrap()
         .for_header(http::header::CONTENT_TYPE, 10);
 
     let constraints = Constraints::new().size_limit(limits);
@@ -310,41 +331,44 @@ async fn test_multipart_constraint_named_header_value_limit_exceeded() {
     let limits = SizeLimit::new()
         .whole_stream(248)
         .per_header(150)
-        .try_for_header("Content-Disposition", 58).unwrap()
-        .for_header(http::header::CONTENT_TYPE, 9);
+        .try_for_header("Content-Disposition", 58)
+        .unwrap()
+        .for_header(http::header::CONTENT_TYPE, 10);
 
     let constraints = Constraints::new().size_limit(limits);
     let mut m = Multipart::with_constraints(str_stream(data), "X-BOUNDARY", constraints);
-    assert_eq!(m.next_field().await.err(), Some(Error::HeaderSizeExceeded {
+    assert!(matches!(m.next_field().await, Err(Error::HeaderSizeExceeded {
         limit: 58,
-        header: Some((http::header::CONTENT_DISPOSITION, 59)),
-    }));
+        header: Some((name, 59)),
+    }) if name == http::header::CONTENT_DISPOSITION));
 
     let limits = SizeLimit::new()
         .whole_stream(248)
         .per_header(150)
-        .try_for_header("Content-Disposition", 59).unwrap()
+        .try_for_header("Content-Disposition", 59)
+        .unwrap()
         .for_header(http::header::CONTENT_TYPE, 9);
 
     let constraints = Constraints::new().size_limit(limits);
     let mut m = Multipart::with_constraints(str_stream(data), "X-BOUNDARY", constraints);
-    assert_eq!(m.next_field().await.err(), Some(Error::HeaderSizeExceeded {
+    assert!(matches!(m.next_field().await, Err(Error::HeaderSizeExceeded {
         limit: 9,
-        header: Some((http::header::CONTENT_TYPE, 10)),
-    }));
+        header: Some((name, 10)),
+    }) if name == http::header::CONTENT_TYPE));
 
     let limits = SizeLimit::new()
         .whole_stream(248)
         .per_header(8)
-        .try_for_header("Content-Disposition", 59).unwrap()
+        .try_for_header("Content-Disposition", 59)
+        .unwrap()
         .for_header(http::header::CONTENT_TYPE, 9);
 
     let constraints = Constraints::new().size_limit(limits);
     let mut m = Multipart::with_constraints(str_stream(data), "X-BOUNDARY", constraints);
-    assert_eq!(m.next_field().await.err(), Some(Error::HeaderSizeExceeded {
-        limit: 8,
-        header: None,
-    }));
+    assert!(matches!(
+        m.next_field().await,
+        Err(Error::HeaderSizeExceeded { limit: 8, header: None })
+    ));
 }
 
 #[tokio::test]
@@ -353,9 +377,16 @@ async fn test_multiaccess_caught() {
     let stream = str_stream(data);
     let mut m = Multipart::new(stream, "X-BOUNDARY");
 
-    let field1 = m.next_field().await;
-    let field2 = m.next_field().await;
-
-    assert!(matches!(field2.unwrap_err(), multer::Error::LockFailure));
-    assert!(field1.is_ok());
+    let mut field = m.next_field().await.unwrap().unwrap();
+    let mut body = Vec::new();
+    while let Some(chunk) = field.next().await {
+        body.extend_from_slice(&chunk.unwrap());
+    }
+    assert_eq!(body, b"abcd");
+    assert!(matches!(m.next_field().await, Err(Error::LockFailure)));
+    drop(field);
+    let next = m.next_field().await.unwrap().unwrap();
+    assert_eq!((next.index(), next.name()), (1, Some("my_file_field")));
+    assert_eq!(next.text().await.unwrap(), "Hello world\nHello\r\nWorld\rAgain");
+    assert!(m.next_field().await.unwrap().is_none());
 }

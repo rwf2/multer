@@ -48,6 +48,7 @@ use crate::size_limit::SizeLimit;
 #[derive(Debug, Default)]
 pub struct Constraints {
     pub(crate) size_limit: SizeLimit,
+    pub(crate) max_fields: Option<usize>,
     pub(crate) allowed_fields: Option<Vec<String>>,
 }
 
@@ -58,22 +59,24 @@ impl Constraints {
     }
 
     /// Applies rules on field's content length.
-    pub fn size_limit(self, size_limit: SizeLimit) -> Constraints {
-        Constraints {
-            size_limit,
-            allowed_fields: self.allowed_fields,
-        }
+    pub fn size_limit(mut self, size_limit: SizeLimit) -> Constraints {
+        self.size_limit = size_limit;
+        self
     }
 
     /// Specify which fields should be allowed, for any unknown field, the
     /// [`next_field`](crate::Multipart::next_field) will throw an error.
-    pub fn allowed_fields<N: Into<String>>(self, allowed_fields: Vec<N>) -> Constraints {
-        let allowed_fields = allowed_fields.into_iter().map(|item| item.into()).collect();
+    pub fn allowed_fields<N: Into<String>>(mut self, allowed_fields: Vec<N>) -> Constraints {
+        self.allowed_fields = Some(allowed_fields.into_iter().map(Into::into).collect());
+        self
+    }
 
-        Constraints {
-            size_limit: self.size_limit,
-            allowed_fields: Some(allowed_fields),
-        }
+    /// Accepts at most `limit` parts. Empty, unnamed, repeated, rejected and
+    /// skipped parts each count once. A closing boundary counts zero, so a
+    /// limit of zero accepts an empty form. The default is unlimited.
+    pub fn max_fields(mut self, limit: usize) -> Constraints {
+        self.max_fields = Some(limit);
+        self
     }
 
     pub(crate) fn is_it_allowed(&self, field: Option<&str>) -> bool {

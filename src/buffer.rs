@@ -1,164 +1,129 @@
 use std::fmt;
 use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::sync::Arc;
+use std::task::{ready, Context, Poll};
 
 use bytes::{Buf, Bytes, BytesMut};
 use futures_util::stream::Stream;
+#[cfg(feature = "tokio-io")]
+use {bytes::BufMut, tokio::io::AsyncRead, tokio_util::io::poll_read_buf};
 
-use crate::constants;
+use crate::error::BoxError;
+use crate::size_limit::checked_size;
+
+const REFILL_BYTES: usize = 16 * 1024;
+pub(crate) const REFILLS_PER_POLL: usize = 32;
+
+pub(crate) enum Input<'r> {
+    Stream(Pin<Box<dyn Stream<Item = Result<Bytes, BoxError>> + Send + 'r>>),
+    #[cfg(feature = "tokio-io")]
+    Reader(Box<dyn AsyncRead + Unpin + Send + 'r>),
+}
+
+// These failures can be observed by both the live field and its parent.
+pub(crate) enum ReadError {
+    Source(Arc<BoxError>),
+    StreamSize,
+    FieldSize,
+    IncompleteField,
+}
 
 pub(crate) struct StreamBuffer<'r> {
     pub(crate) eof: bool,
     pub(crate) buf: BytesMut,
-    pub(crate) stream: Pin<Box<dyn Stream<Item = Result<Bytes, crate::Error>> + Send + 'r>>,
-    pub(crate) whole_stream_size_limit: u64,
-    pub(crate) stream_size_counter: u64,
+    input: Input<'r>,
+    remainder: Bytes,
+    stream_size_limit: u64,
+    stream_size: u64,
 }
 
 impl<'r> StreamBuffer<'r> {
-    pub fn new<S>(stream: S, whole_stream_size_limit: u64) -> Self
-    where
-        S: Stream<Item = Result<Bytes, crate::Error>> + Send + 'r,
-    {
-        StreamBuffer {
+    pub fn new(input: Input<'r>, stream_size_limit: u64) -> Self {
+        Self {
             eof: false,
             buf: BytesMut::new(),
-            stream: Box::pin(stream),
-            whole_stream_size_limit,
-            stream_size_counter: 0,
+            input,
+            remainder: Bytes::new(),
+            stream_size_limit,
+            stream_size: 0,
         }
     }
 
-    pub fn poll_stream(&mut self, cx: &mut Context<'_>) -> Result<(), crate::Error> {
-        if self.eof {
-            return Ok(());
+    pub fn poll_refill(&mut self, cx: &mut Context<'_>, budget: &mut usize) -> Poll<Result<(), ReadError>> {
+        if *budget == 0 {
+            cx.waker().wake_by_ref();
+            return Poll::Pending;
         }
+        *budget -= 1;
 
-        loop {
-            match self.stream.as_mut().poll_next(cx) {
-                Poll::Ready(Some(Ok(data))) => {
-                    self.stream_size_counter += data.len() as u64;
-
-                    if self.stream_size_counter > self.whole_stream_size_limit {
-                        return Err(crate::Error::StreamSizeExceeded {
-                            limit: self.whole_stream_size_limit,
-                        });
-                    }
-
-                    self.buf.extend_from_slice(&data)
-                }
-                Poll::Ready(Some(Err(err))) => return Err(err),
-                Poll::Ready(None) => {
-                    self.eof = true;
-                    return Ok(());
-                }
-                Poll::Pending => return Ok(()),
-            }
-        }
-    }
-
-    pub fn read_exact(&mut self, size: usize) -> Option<Bytes> {
-        if size <= self.buf.len() {
-            Some(self.buf.split_to(size).freeze())
-        } else {
-            None
-        }
-    }
-
-    pub fn peek_exact(&mut self, size: usize) -> Option<&[u8]> {
-        self.buf.get(..size)
-    }
-
-    pub fn read_until(&mut self, pattern: &[u8]) -> Option<Bytes> {
-        memchr::memmem::find(&self.buf, pattern).map(|idx| self.buf.split_to(idx + pattern.len()).freeze())
-    }
-
-    pub fn read_to(&mut self, pattern: &[u8]) -> Option<Bytes> {
-        memchr::memmem::find(&self.buf, pattern).map(|idx| self.buf.split_to(idx).freeze())
-    }
-
-    pub fn advance_past_transport_padding(&mut self) -> bool {
-        match self.buf.iter().position(|b| *b != b' ' && *b != b'\t') {
-            Some(pos) => {
-                self.buf.advance(pos);
-                true
-            }
-            None => {
-                self.buf.clear();
-                false
-            }
-        }
-    }
-
-    pub fn read_field_data(
-        &mut self,
-        boundary: &str,
-        field_name: Option<&str>,
-    ) -> crate::Result<Option<(bool, Bytes)>> {
-        trace!("finding next field: {:?}", field_name);
-        if self.buf.is_empty() && self.eof {
-            trace!("empty buffer && EOF");
-            return Err(crate::Error::IncompleteFieldData {
-                field_name: field_name.map(|s| s.to_owned()),
-            });
-        } else if self.buf.is_empty() {
-            return Ok(None);
-        }
-
-        let boundary_deriv = format!("{}{}{}", constants::CRLF, constants::BOUNDARY_EXT, boundary);
-        let b_len = boundary_deriv.len();
-
-        match memchr::memmem::find(&self.buf, boundary_deriv.as_bytes()) {
-            Some(idx) => {
-                trace!("new field found at {}", idx);
-                let bytes = self.buf.split_to(idx).freeze();
-
-                // discard \r\n.
-                self.buf.advance(constants::CRLF.len());
-
-                Ok(Some((true, bytes)))
-            }
-            None if self.eof => {
-                trace!("no new field found: EOF. terminating");
-                Err(crate::Error::IncompleteFieldData {
-                    field_name: field_name.map(|s| s.to_owned()),
-                })
-            }
-            None => {
-                let buf_len = self.buf.len();
-                let rem_boundary_part_max_len = b_len - 1;
-                let rem_boundary_part_idx = if buf_len >= rem_boundary_part_max_len {
-                    buf_len - rem_boundary_part_max_len
-                } else {
-                    0
-                };
-
-                trace!("no new field found, not EOF, checking close");
-                let bytes = &self.buf[rem_boundary_part_idx..];
-                match memchr::memmem::rfind(bytes, constants::CR.as_bytes()) {
-                    Some(rel_idx) => {
-                        let idx = rel_idx + rem_boundary_part_idx;
-
-                        match memchr::memmem::find(boundary_deriv.as_bytes(), &self.buf[idx..]) {
-                            Some(_) => {
-                                let bytes = self.buf.split_to(idx).freeze();
-
-                                match bytes.is_empty() {
-                                    true => Ok(None),
-                                    false => Ok(Some((false, bytes))),
-                                }
-                            }
-                            None => Ok(Some((false, self.read_full_buf()))),
+        match &mut self.input {
+            Input::Stream(stream) => {
+                if self.remainder.is_empty() {
+                    let item = match ready!(stream.as_mut().poll_next(cx)) {
+                        Some(Ok(item)) => item,
+                        Some(Err(err)) => return Poll::Ready(Err(ReadError::Source(Arc::new(err)))),
+                        None => {
+                            self.eof = true;
+                            return Poll::Ready(Ok(()));
                         }
-                    }
-                    None => Ok(Some((false, self.read_full_buf()))),
+                    };
+                    self.stream_size = checked_size(self.stream_size, item.len(), self.stream_size_limit)
+                        .ok_or(ReadError::StreamSize)?;
+                    self.remainder = item;
+                }
+
+                let len = self.remainder.len().min(REFILL_BYTES);
+                self.buf.extend_from_slice(&self.remainder[..len]);
+                if len == self.remainder.len() {
+                    self.remainder = Bytes::new();
+                } else {
+                    self.remainder.advance(len);
                 }
             }
+            #[cfg(feature = "tokio-io")]
+            Input::Reader(reader) => {
+                if self.buf.capacity() == self.buf.len() {
+                    self.buf.reserve(4096);
+                }
+                let mut dest = (&mut self.buf).limit(REFILL_BYTES);
+                let len = ready!(poll_read_buf(Pin::new(reader), cx, &mut dest))
+                    .map_err(|err| ReadError::Source(Arc::new(err.into())))?;
+                self.eof = len == 0;
+                self.stream_size =
+                    checked_size(self.stream_size, len, self.stream_size_limit).ok_or(ReadError::StreamSize)?;
+            }
         }
+        Poll::Ready(Ok(()))
     }
 
-    pub fn read_full_buf(&mut self) -> Bytes {
-        self.buf.split_to(self.buf.len()).freeze()
+    pub fn discard(&mut self) {
+        self.remainder = Bytes::new();
+        self.buf = BytesMut::new();
+    }
+
+    pub fn advance_past_transport_padding(&mut self) {
+        let padding = self.buf.iter().take_while(|&&b| b == b' ' || b == b'\t').count();
+        self.buf.advance(padding);
+    }
+
+    pub fn read_field_data(&mut self, marker: &[u8]) -> Option<(bool, Bytes)> {
+        if self.buf.is_empty() {
+            return None;
+        }
+        if let Some(idx) = memchr::memmem::find(&self.buf, marker) {
+            trace!("field boundary at byte {}", idx);
+            let bytes = self.buf.split_to(idx).freeze();
+            self.buf.advance(marker.len());
+            return Some((true, bytes));
+        }
+
+        // Only a trailing prefix can become a delimiter after the next refill.
+        let start = self.buf.len().saturating_sub(marker.len() - 1);
+        let tail = &self.buf[start..];
+        let keep_from = memchr::memchr_iter(b'\r', tail)
+            .find(|&pos| marker.starts_with(&tail[pos..]))
+            .map_or(self.buf.len(), |pos| start + pos);
+        (keep_from > 0).then(|| (false, self.buf.split_to(keep_from).freeze()))
     }
 }
 

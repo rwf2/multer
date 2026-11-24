@@ -1,6 +1,7 @@
 use std::collections::HashMap;
+use std::convert::TryFrom;
 
-use crate::{constants, Result, Error};
+use crate::{constants, Error, Result};
 
 /// Represents size limit of the stream to prevent DoS attacks.
 ///
@@ -21,7 +22,9 @@ impl SizeLimit {
         SizeLimit::default()
     }
 
-    /// Sets size limit for the whole stream.
+    /// Limits all bytes fetched from the source, including preamble and skipped fields.
+    /// Each fetched stream item counts in full, including any bytes after the closing
+    /// boundary. Parsing stops at the closing boundary without fetching later items.
     pub fn whole_stream(mut self, limit: u64) -> SizeLimit {
         self.whole_stream = limit;
         self
@@ -44,9 +47,9 @@ impl SizeLimit {
         self
     }
 
-    /// Sets size limit for each header, irrespective of its name. This limit is
-    /// applied to the entire header, including the header name, value, and any
-    /// control characters.
+    /// Limits the raw header section of each part, including all names, values,
+    /// separators and the terminating blank line. A section exactly at the limit
+    /// is accepted. The default is [`u64::MAX`].
     pub fn per_header(mut self, limit: u64) -> SizeLimit {
         self.per_header = limit;
         self
@@ -54,7 +57,9 @@ impl SizeLimit {
 
     /// Sets a size limit for the value of a header given its name. This limit
     /// is applied in addition to the [`per_header`](Self::per_header) limit
-    /// when the header name matches.
+    /// when the header name matches. For repeated names, the last parsed value
+    /// is retained and checked. Use [`per_header`](Self::per_header) to bound the
+    /// raw bytes collected before values are parsed.
     ///
     /// An error is returned if the header name is invalid.
     ///
@@ -69,11 +74,10 @@ impl SizeLimit {
     /// ```
     pub fn try_for_header<N: AsRef<str>>(mut self, name: N, limit: u64) -> Result<SizeLimit> {
         let name = name.as_ref();
-        let header_name = http::HeaderName::from_bytes(name.as_ref())
-            .map_err(|e| Error::DecodeHeaderName {
-                name: name.to_owned(),
-                cause: e.into(),
-            })?;
+        let header_name = http::HeaderName::from_bytes(name.as_ref()).map_err(|e| Error::DecodeHeaderName {
+            name: name.to_owned(),
+            cause: e.into(),
+        })?;
 
         self.header_map.insert(header_name, limit);
         Ok(self)
@@ -98,7 +102,7 @@ impl SizeLimit {
 
     pub(crate) fn extract_size_limit_for(&self, field: Option<&str>) -> u64 {
         field
-            .and_then(|field| self.field_map.get(&field.to_owned()))
+            .and_then(|field| self.field_map.get(field))
             .copied()
             .unwrap_or(self.per_field)
     }
@@ -114,4 +118,11 @@ impl Default for SizeLimit {
             header_map: HashMap::default(),
         }
     }
+}
+
+// Convert before comparing so even a limit larger than usize::MAX is preserved.
+pub(crate) fn checked_size(total: u64, additional: usize, limit: u64) -> Option<u64> {
+    total
+        .checked_add(u64::try_from(additional).ok()?)
+        .filter(|&size| size <= limit)
 }

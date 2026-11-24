@@ -18,7 +18,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-multer = "2.0"
+multer = "4"
 ```
 
 # Basic Example
@@ -105,6 +105,43 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+## Migrating from 3.1
+
+Fields and payload chunks can arrive earlier in 4.0. A later call can report a
+source or size error after a payload prefix has been delivered. Consume each
+field as a stream and drive `next_field()` through `Ok(None)` to confirm the
+entire form. A fetched stream item counts in full toward `whole_stream`,
+including its epilogue. The closing boundary completes parsing immediately.
+
+A field reports a terminal read error once and then ends. Drop the field to
+receive the same typed error from its parent. After the parent reports a
+terminal error, further calls return `Error::MultipartFailed`. A live-field
+`LockFailure`, an `UnknownField` rejection and a JSON conversion error after a
+complete body still allow iteration to continue.
+
+`Error::StreamReadFailed(cause)` now holds an
+`Arc<Box<dyn std::error::Error + Send + Sync>>`. Both
+`cause.downcast_ref::<T>()` and a downcast through Multer's `Error::source()`
+reach the original error. Move the handle or use `Arc::clone(&cause)` to keep
+it. To recover ownership, call `Arc::try_unwrap(cause)`, then
+`boxed.downcast::<T>()`. While another report holds the cause, `try_unwrap`
+returns that handle in `Err`. The parser releases its report when the parent
+takes it or the shared state is dropped. To construct a stream error from an
+existing boxed cause, use `Error::StreamReadFailed(Arc::new(boxed))`.
+
+`Constraints::max_fields(n)` admits up to `n` parts, including empty,
+unnamed, rejected and skipped parts. Configure `SizeLimit::per_header(n)` to
+bound the raw header section of each part, including separators and its final
+blank line. A section exactly at the limit is accepted. `for_header` and
+`try_for_header` separately limit the retained parsed value for a named
+header. The default permits any part count and header size representable by
+the counters.
+
+A part beginning with a blank line yields an unnamed field with empty
+headers. Content-Disposition parameters are read in order, so quoted text in
+another parameter cannot supply a field's name or filename. Name-based
+filtering and size limits use the parsed field name.
 
 ## Usage with [hyper.rs](https://hyper.rs/) server
 

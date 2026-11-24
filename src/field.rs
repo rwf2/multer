@@ -1,6 +1,6 @@
 use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::task::{ready, Context, Poll};
 
 use bytes::{Bytes, BytesMut};
 use encoding_rs::{Encoding, UTF_8};
@@ -10,8 +10,9 @@ use http::header::HeaderMap;
 use serde::de::DeserializeOwned;
 use spin::mutex::spin::SpinMutex as Mutex;
 
+use crate::buffer::REFILLS_PER_POLL;
 use crate::content_disposition::ContentDisposition;
-use crate::multipart::{MultipartState, StreamingStage};
+use crate::multipart::MultipartState;
 use crate::{helpers, Error};
 
 /// A single field in a multipart stream.
@@ -160,6 +161,9 @@ impl<'r> Field<'r> {
     /// # }
     /// # tokio::runtime::Runtime::new().unwrap().block_on(run());
     /// ```
+    ///
+    /// A terminal read error is returned once and ends this field stream. After
+    /// the field is dropped, the parent reports the same typed cause once.
     pub async fn chunk(&mut self) -> crate::Result<Option<Bytes>> {
         self.try_next().await
     }
@@ -322,41 +326,21 @@ impl Stream for Field<'_> {
             return Poll::Ready(None);
         }
 
-        debug_assert!(self.state.try_lock().is_some(), "expected exlusive lock");
-        let state = self.state.clone();
-        let mut lock = match state.try_lock() {
-            Some(lock) => lock,
+        let field = &mut *self;
+        let mut state = match field.state.try_lock() {
+            Some(state) => state,
             None => return Poll::Ready(Some(Err(Error::LockFailure))),
         };
-
-        let state = &mut *lock;
-        if let Err(err) = state.buffer.poll_stream(cx) {
-            return Poll::Ready(Some(Err(err)));
-        }
-
-        match state
-            .buffer
-            .read_field_data(&state.boundary, state.curr_field_name.as_deref())
-        {
-            Ok(Some((done, bytes))) => {
-                state.curr_field_size_counter += bytes.len() as u64;
-
-                if state.curr_field_size_counter > state.curr_field_size_limit {
-                    return Poll::Ready(Some(Err(Error::FieldSizeExceeded {
-                        limit: state.curr_field_size_limit,
-                        field_name: state.curr_field_name.clone(),
-                    })));
-                }
-
-                if done {
-                    state.stage = StreamingStage::ReadingBoundary;
-                    self.done = true;
-                }
-
+        let mut budget = REFILLS_PER_POLL;
+        match ready!(state.poll_body(cx, &mut budget)) {
+            Ok((done, bytes)) => {
+                field.done = done;
                 Poll::Ready(Some(Ok(bytes)))
             }
-            Ok(None) => Poll::Pending,
-            Err(err) => Poll::Ready(Some(Err(err))),
+            Err(err) => {
+                field.done = true;
+                Poll::Ready(Some(Err(state.fail_field(err))))
+            }
         }
     }
 }
