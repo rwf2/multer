@@ -541,6 +541,46 @@ async fn header_limits_at_section_boundaries() {
 }
 
 #[tokio::test]
+async fn a_header_error_ends_the_form_after_an_earlier_field() {
+    // The source can pause after the headers or deliver the rest of the form in the same read.
+    for (skip_rest, tail) in [
+        (false, b"red\r\n\r\n".as_slice()),
+        (true, b"red\r\n\r\nmiddle\r\n--B\r\n\r\nlast\r\n--B--"),
+    ] {
+        let polls = AtomicUsize::new(0);
+        let (tx, source) = channel(&polls);
+        let limits = SizeLimit::new().try_for_header("X-Tag", 3).unwrap();
+        let mut m = Multipart::with_constraints(source, "B", Constraints::new().size_limit(limits));
+        tx.send(Ok(Bytes::from_static(b"--B\r\n\r\nabc"))).unwrap();
+        let mut field = m.next_field().await.unwrap().unwrap();
+        let prefix = field.chunk().await.unwrap().unwrap();
+
+        tx.send(Ok(Bytes::from_static(b"def\r\n--B\r\nX-Tag: blue\r\nx-tag: ")))
+            .unwrap();
+        if skip_rest {
+            drop(field);
+        } else {
+            assert_eq!(field.bytes().await.unwrap(), "def");
+        }
+        assert!(m.next_field().now_or_never().is_none());
+
+        tx.send(Ok(Bytes::from_static(tail))).unwrap();
+        let before = polls.load(Ordering::Relaxed);
+        let err = m.next_field().now_or_never().unwrap().unwrap_err();
+        assert!(matches!(err, Error::HeaderSizeExceeded {
+            limit: 3,
+            header: Some((name, 4)),
+        } if name == "x-tag"));
+        assert!(matches!(
+            m.next_field().now_or_never(),
+            Some(Err(Error::MultipartFailed))
+        ));
+        assert_eq!(polls.load(Ordering::Relaxed), before + 1);
+        assert_eq!(prefix, "abc");
+    }
+}
+
+#[tokio::test]
 async fn keep_or_skip_a_partially_read_body_under_its_limit() {
     for (skip, limit) in [(false, 6), (true, 6), (true, 5)] {
         let polls = AtomicUsize::new(0);
