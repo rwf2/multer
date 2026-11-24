@@ -138,6 +138,10 @@ blank line. A section exactly at the limit is accepted. `for_header` and
 header. The default permits any part count and header size representable by
 the counters.
 
+The opening boundary must start at byte zero or immediately after a CRLF.
+Multer skips boundary-like text elsewhere in the preamble. A form whose only
+opening marker is mid-line now ends with `Error::IncompleteStream`.
+
 A part beginning with a blank line yields an unnamed field with empty
 headers. Content-Disposition parameters are read in order, so quoted text in
 another parameter cannot supply a field's name or filename. Name-based

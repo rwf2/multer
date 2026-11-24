@@ -129,6 +129,12 @@ impl OpeningSearch {
             return false;
         }
         if self.prefixes.is_empty() {
+            // A form can start directly with "--boundary". Every marker in
+            // the preamble must instead include the preceding CRLF.
+            if buf.starts_with(&marker[2..]) {
+                buf.advance(marker.len() - 2);
+                return true;
+            }
             if let Some(pos) = memchr::memmem::find(buf, marker) {
                 buf.advance(pos + marker.len());
                 return true;
@@ -142,8 +148,10 @@ impl OpeningSearch {
                 matched += usize::from(marker[matched] == marker[i]);
                 self.prefixes[i] = matched;
             }
-            // Only this final span can contain the start of an incomplete match.
-            buf.advance(buf.len().saturating_sub(marker.len() - 1));
+            // Treat the start of the stream as if it followed a CRLF, even
+            // when the first marker arrives in pieces. KMP carries any later
+            // line start across refills as part of the marker itself.
+            self.matched = 2;
         }
 
         for (i, &byte) in buf.iter().enumerate() {
@@ -366,11 +374,10 @@ impl MultipartState<'_> {
     fn poll_headers(&mut self, cx: &mut Context<'_>) -> Poll<Result<Option<HeaderMap>>> {
         let mut budget = REFILLS_PER_POLL;
         loop {
-            let opening = &self.marker.as_bytes()[2..];
             let buf = &mut self.buffer.buf;
             match &mut self.stage {
                 StreamingStage::FindingFirstBoundary(search) => {
-                    if search.consume(buf, opening) {
+                    if search.consume(buf, self.marker.as_bytes()) {
                         self.stage = StreamingStage::DeterminingBoundaryType;
                         continue;
                     }

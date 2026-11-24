@@ -109,7 +109,7 @@ async fn reader_returns_buffered_field_and_body_after_one_bounded_read() {
 
 #[tokio::test]
 async fn delimiters_at_every_split() {
-    let prefix = b"preamble ---abb--ab";
+    let prefix = b"preamble --aba-- in text\n--aba after LF\r--aba after CR\r\n";
     let header = b"--aba\t \r\nContent-Disposition: form-data; name=file\r\n\r\n";
     let data = b"binary\xff\r\n--abX\r\r\n--a\r\n--z";
     let tail = b"\r\n--aba \t\r\nContent-Disposition: form-data; name=last\r\n\r\nyes\r\n--aba--";
@@ -157,6 +157,27 @@ async fn delimiters_at_every_split() {
 }
 
 #[tokio::test]
+async fn opening_boundary_requires_a_line_start() {
+    for prefix in ["", "preamble\r\n", "text", "text\r", "text\n"] {
+        let wire = format!("{prefix}--B--");
+        for width in [1, 2, wire.len()] {
+            let source = stream::iter(
+                wire.as_bytes()
+                    .chunks(width)
+                    .map(|b| Ok::<_, Infallible>(Bytes::copy_from_slice(b))),
+            );
+            let mut m = Multipart::new(source, "B");
+            if prefix.is_empty() || prefix.ends_with("\r\n") {
+                assert!(m.next_field().await.unwrap().is_none());
+            } else {
+                assert!(matches!(m.next_field().await, Err(Error::IncompleteStream)));
+                assert!(matches!(m.next_field().await, Err(Error::MultipartFailed)));
+            }
+        }
+    }
+}
+
+#[tokio::test]
 async fn pending_reads_resume_across_cancellation() {
     let polls = AtomicUsize::new(0);
     let (tx, source) = channel(&polls);
@@ -164,7 +185,7 @@ async fn pending_reads_resume_across_cancellation() {
         .size_limit(SizeLimit::new().per_field(9))
         .max_fields(2);
     let mut m = Multipart::with_constraints(source, "B", constraints);
-    tx.send(Ok(Bytes::from_static(b"preamble-"))).unwrap();
+    tx.send(Ok(Bytes::from_static(b"preamble\r\n-"))).unwrap();
     assert!(m.next_field().now_or_never().is_none());
     tx.send(Ok(Bytes::from_static(b"-B\r\nContent-Disposition: form-data; na")))
         .unwrap();
@@ -334,7 +355,7 @@ async fn count_is_checked_at_admission() {
 
 #[tokio::test]
 async fn an_entire_fetched_item_counts_once() {
-    let mut wire = [b"Preamble: ordinary".as_slice(), FILE_HEAD, b"abc", CLOSE].concat();
+    let mut wire = [b"Preamble: ordinary\r\n".as_slice(), FILE_HEAD, b"abc", CLOSE].concat();
     wire.resize(20000, b' ');
     let size = wire.len() as u64;
     for limit in [size - 1, size] {
