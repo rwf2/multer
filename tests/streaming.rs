@@ -175,7 +175,7 @@ async fn reader_returns_buffered_field_and_body_after_one_bounded_read() {
 async fn delimiters_at_every_split() {
     let prefix = b"preamble --aba-- in text\n--aba after LF\r--aba after CR\r\n";
     let header = b"--aba\t \r\nContent-Disposition: form-data; name=file\r\n\r\n";
-    let data = b"binary\xff\r\n--abX\r\r\n--a\r\n--z";
+    let data = b"report\r\n--------------------\r\nsecond line\r\nbinary\xff\r\n--abX\r\r\n--a\r\n--z";
     let tail = b"\r\n--aba \t\r\nContent-Disposition: form-data; name=last\r\n\r\nyes\r\n--aba--";
     let wire = [&prefix[..], header, data, tail].concat();
     for split in 0..=wire.len() {

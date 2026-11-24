@@ -326,6 +326,7 @@ impl<'r> Field<'r> {
 impl Stream for Field<'_> {
     type Item = Result<Bytes, Error>;
 
+    #[inline]
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if self.done {
             return Poll::Ready(None);

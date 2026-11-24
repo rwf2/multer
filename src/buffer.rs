@@ -34,7 +34,6 @@ pub(crate) struct StreamBuffer<'r> {
     pub(crate) eof: bool,
     pub(crate) buf: BytesMut,
     input: Input<'r>,
-    marker_start: Finder<'static>,
     remainder: Bytes,
     stream_size_limit: u64,
     stream_size: u64,
@@ -46,7 +45,6 @@ impl<'r> StreamBuffer<'r> {
             eof: false,
             buf: BytesMut::new(),
             input,
-            marker_start: Finder::new(b"\r\n--"),
             remainder: Bytes::new(),
             stream_size_limit,
             stream_size: 0,
@@ -55,11 +53,12 @@ impl<'r> StreamBuffer<'r> {
 
     // Return an owned payload slice when the stream supplies distinguishable body
     // bytes. Framing and reader input go into the parser buffer.
+    #[inline]
     pub fn poll_refill(
         &mut self,
         cx: &mut Context<'_>,
         budget: &mut usize,
-        marker: Option<&[u8]>,
+        marker: Option<&Finder<'_>>,
     ) -> Poll<Result<Option<Bytes>, ReadError>> {
         if *budget == 0 {
             cx.waker().wake_by_ref();
@@ -84,7 +83,7 @@ impl<'r> StreamBuffer<'r> {
                         if self.buf.is_empty()
                             && !item.is_empty()
                             && item.len() <= REFILL_BYTES
-                            && payload_span(&item, marker, &self.marker_start).0 == item.len()
+                            && payload_span(&item, marker).0 == item.len()
                         {
                             return Poll::Ready(Ok(Some(item)));
                         }
@@ -128,19 +127,20 @@ impl<'r> StreamBuffer<'r> {
         self.buf.advance(padding);
     }
 
+    #[inline]
     pub fn poll_field_data(
         &mut self,
         cx: &mut Context<'_>,
         budget: &mut usize,
-        marker: &[u8],
+        marker: &Finder<'_>,
     ) -> Poll<Result<(bool, Bytes), ReadError>> {
         loop {
             if !self.buf.is_empty() {
-                let (len, done) = payload_span(&self.buf, marker, &self.marker_start);
+                let (len, done) = payload_span(&self.buf, marker);
                 if len > 0 || done {
                     let bytes = self.buf.split_to(len).freeze();
                     if done {
-                        self.buf.advance(marker.len());
+                        self.buf.advance(marker.needle().len());
                     }
                     return Poll::Ready(Ok((done, bytes)));
                 }
@@ -155,30 +155,16 @@ impl<'r> StreamBuffer<'r> {
     }
 }
 
-// Returns the distinguishable payload length and whether a full marker follows.
-fn payload_span(buf: &[u8], needle: &[u8], marker_start: &Finder<'_>) -> (usize, bool) {
-    let first = match marker_start.find(buf) {
-        Some(pos) => pos,
-        None => {
-            // No CRLF-- occurs in this span. At most its final three bytes
-            // can start a marker which continues into the next refill.
-            let overlap = match buf.last() {
-                Some(b'\r') => 1,
-                Some(b'\n') if buf.ends_with(b"\r\n") => 2,
-                Some(b'-') if buf.ends_with(b"\r\n-") => 3,
-                _ => 0,
-            };
-            return (buf.len() - overlap, false);
-        }
-    };
-    if buf[first..].starts_with(needle) {
-        trace!("field boundary at byte {}", first);
-        return (first, true);
+// Return the distinguishable payload length and whether a full marker follows.
+#[inline]
+fn payload_span(buf: &[u8], marker: &Finder<'_>) -> (usize, bool) {
+    if let Some(idx) = marker.find(buf) {
+        trace!("field boundary at byte {}", idx);
+        return (idx, true);
     }
-    if let Some(idx) = memchr::memmem::find(&buf[first + 1..], needle) {
-        return (first + 1 + idx, true);
-    }
+
     // Only a trailing prefix can become a delimiter after the next refill.
+    let needle = marker.needle();
     let start = buf.len().saturating_sub(needle.len() - 1);
     let tail = &buf[start..];
     let len = memchr::memchr_iter(b'\r', tail)
@@ -199,8 +185,8 @@ mod tests {
 
     #[test]
     fn payload_spans_match_a_direct_search() {
-        let start = Finder::new(b"\r\n--");
         for needle in [&b"\r\n--B"[..], b"\r\n--ABAB", b"\r\n--B\r\n--B"] {
+            let marker = Finder::new(needle);
             let text = [
                 b"\rX\nY\r\r\n\r\n--A\r\n--ABAX\r\n--".as_slice(),
                 needle,
@@ -221,7 +207,7 @@ mod tests {
                             (buf.len() - overlap, false)
                         }
                     };
-                    assert_eq!(payload_span(buf, needle, &start), expected);
+                    assert_eq!(payload_span(buf, &marker), expected);
                 }
             }
         }

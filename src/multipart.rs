@@ -10,6 +10,7 @@ use spin::mutex::spin::SpinMutex as Mutex;
 use tokio::io::AsyncRead;
 
 use http::HeaderMap;
+use memchr::memmem::Finder;
 
 use crate::buffer::{Input, ReadError, StreamBuffer, REFILLS_PER_POLL};
 use crate::constraints::Constraints;
@@ -96,7 +97,7 @@ pub struct Multipart<'r> {
 pub(crate) struct MultipartState<'r> {
     buffer: StreamBuffer<'r>,
     // The opening and ordinary boundary lines start after the leading CRLF.
-    marker: String,
+    marker: Finder<'static>,
     stage: StreamingStage,
     next_field_idx: usize,
     curr_field_name: Option<String>,
@@ -200,7 +201,7 @@ impl<'r> Multipart<'r> {
         Multipart {
             state: Arc::new(Mutex::new(MultipartState {
                 buffer: StreamBuffer::new(input, constraints.size_limit.whole_stream),
-                marker: boundary,
+                marker: Finder::new(&boundary).into_owned(),
                 stage: StreamingStage::FindingFirstBoundary(OpeningSearch::default()),
                 next_field_idx: 0,
                 curr_field_name: None,
@@ -377,7 +378,7 @@ impl MultipartState<'_> {
             let buf = &mut self.buffer.buf;
             match &mut self.stage {
                 StreamingStage::FindingFirstBoundary(search) => {
-                    if search.consume(buf, self.marker.as_bytes()) {
+                    if search.consume(buf, self.marker.needle()) {
                         self.stage = StreamingStage::DeterminingBoundaryType;
                         continue;
                     }
@@ -459,12 +460,13 @@ impl MultipartState<'_> {
         }
     }
 
+    #[inline]
     pub(crate) fn poll_body(
         &mut self,
         cx: &mut Context<'_>,
         budget: &mut usize,
     ) -> Poll<Result<(bool, Bytes), ReadError>> {
-        let (done, bytes) = ready!(self.buffer.poll_field_data(cx, budget, self.marker.as_bytes()))?;
+        let (done, bytes) = ready!(self.buffer.poll_field_data(cx, budget, &self.marker))?;
         self.curr_field_size_counter =
             checked_size(self.curr_field_size_counter, bytes.len(), self.curr_field_size_limit)
                 .ok_or(ReadError::FieldSize)?;
